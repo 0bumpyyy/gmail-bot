@@ -7,8 +7,10 @@
 /dataSources/
 /dataSources.local.xml
 
-echo "node_modules/
-.env
+node_modules/
 dist/
+.env
 .DS_Store
-*.log" > .gitignore
+*.log
+prisma/dev.db
+prisma/dev.db-journal
