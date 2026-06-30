@@ -1,1 +1,1 @@
-web: node dist/bot.js
+web: node node_modules/.bin/tsc && node dist/bot.js
