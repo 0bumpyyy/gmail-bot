@@ -1,1 +1,1 @@
-worker: npm run build && node dist/bot.js
+web: npx tsc && node dist/bot.js
