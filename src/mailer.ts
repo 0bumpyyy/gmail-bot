@@ -107,8 +107,12 @@ async function processAccount(account: any, template: any, config: any, logCallb
 
             const transporter = nodemailer.createTransport({
                 connection: info.socket,
-                host: 'smtp.gmail.com', port: 465, secure: true,
-                auth: { user: account.email, pass: account.password }
+                host: 'smtp.gmail.com',
+                port: 465,
+                secure: true,
+                auth: { user: account.email, pass: account.password },
+                connectionTimeout: 10000,
+                socketTimeout: 10000
             });
 
             let body = template.body
