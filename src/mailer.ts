@@ -99,20 +99,27 @@ async function processAccount(account: any, template: any, config: any, logCallb
             const generatedLink = await generateLink(template.platform, userId, targetName, userToken);    // было template.name
 
             const info = await SocksClient.createConnection({
-                proxy: { host: proxyUri.hostname, port: parseInt(proxyUri.port), type: 5, userId: proxyUri.username, password: proxyUri.password },
+                proxy: {
+                    host: proxyUri.hostname,
+                    port: parseInt(proxyUri.port),
+                    type: 5,
+                    userId: proxyUri.username,
+                    password: proxyUri.password
+                },
                 command: 'connect',
-                destination: { host: 'smtp.gmail.com', port: 465 },
-                timeout: 30000
+                destination: { host: 'smtp.gmail.com', port: 587 },  // ← измените на 587
+                timeout: 45000
             });
 
             const transporter = nodemailer.createTransport({
                 connection: info.socket,
                 host: 'smtp.gmail.com',
-                port: 465,
-                secure: true,
+                port: 587,              // ← измените на 587
+                secure: false,          // ← измените на false (будет STARTTLS)
                 auth: { user: account.email, pass: account.password },
-                connectionTimeout: 10000,
-                socketTimeout: 10000
+                connectionTimeout: 15000,
+                socketTimeout: 15000,
+                greetingTimeout: 10000
             });
 
             let body = template.body
@@ -127,9 +134,17 @@ async function processAccount(account: any, template: any, config: any, logCallb
                 [template.type === 'HTML' ? 'html' : 'text']: body
             });
 
-            await transporter.close();
+            try {
+                await transporter.close();
+            } catch {}
+
+            try {
+                info.socket.destroy();
+            } catch {}
+
             index++;
             await prisma.emailAccount.update({ where: { id: account.id }, data: { currentIndex: index } });
+
             logCallback(`✅ [${account.email}] → ${targetName} <${targetEmail}> | 🔗 ${generatedLink}`);
             await delay(Math.floor(Math.random() * (config.delayRange.max - config.delayRange.min + 1) + config.delayRange.min) * 1000);
         } catch (err: any) {
