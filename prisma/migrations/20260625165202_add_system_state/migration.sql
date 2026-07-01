@@ -1,5 +1,0 @@
--- CreateTable
-CREATE TABLE "SystemState" (
-    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT DEFAULT 1,
-    "isMailingActive" BOOLEAN NOT NULL DEFAULT false
-);
