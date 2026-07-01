@@ -102,7 +102,7 @@ async function processAccount(account: any, template: any, config: any, logCallb
                 proxy: { host: proxyUri.hostname, port: parseInt(proxyUri.port), type: 5, userId: proxyUri.username, password: proxyUri.password },
                 command: 'connect',
                 destination: { host: 'smtp.gmail.com', port: 465 },
-                timeout: 15000
+                timeout: 30000
             });
 
             const transporter = nodemailer.createTransport({
@@ -123,7 +123,7 @@ async function processAccount(account: any, template: any, config: any, logCallb
                 [template.type === 'HTML' ? 'html' : 'text']: body
             });
 
-            info.socket.destroy();
+            await transporter.close();
             index++;
             await prisma.emailAccount.update({ where: { id: account.id }, data: { currentIndex: index } });
             logCallback(`✅ [${account.email}] → ${targetName} <${targetEmail}> | 🔗 ${generatedLink}`);
