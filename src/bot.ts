@@ -327,9 +327,9 @@ const htmlTemplatesListMenu = new Menu<MyContext>('html-templates-list')
             range.row();
         }
     })
-    .text("➕  Создать текстовый шаблон", async (ctx) => {
-        ctx.session.step = 'WAITING_TEXT_NAME';
-        const msg = await ctx.reply("✍️ *Шаг 1 из 4* — Введите название шаблона:", { parse_mode: 'Markdown' });
+    .text("➕  Создать HTML шаблон", async (ctx) => {
+        ctx.session.step = 'WAITING_HTML_NAME';  // HTML, а не TEXT
+        const msg = await ctx.reply("✍️ *Шаг 1 из 5* — Введите название HTML шаблона:", { parse_mode: 'Markdown' });
         ctx.session.lastBotMessageId = msg.message_id;
     })
     .row()
