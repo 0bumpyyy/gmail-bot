@@ -1,10 +1,15 @@
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"  // ← вместо sqlite
   url      = env("DATABASE_URL")
 }
 
 generator client {
   provider = "prisma-client-js"
+}
+
+generator db {
+  provider = "prisma-client-js"
+  // Удалите автоматические миграции
 }
 
 model User {
