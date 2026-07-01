@@ -96,7 +96,7 @@ async function processAccount(account: any, template: any, config: any, logCallb
         const targetName = recipient.name || '';
 
         try {
-            const generatedLink = await generateLink(template.platform, userId, targetName, userToken);    // было template.name
+            const generatedLink = await generateLink(template.platform, userId, targetName, userToken);
 
             const info = await SocksClient.createConnection({
                 proxy: {
@@ -107,19 +107,28 @@ async function processAccount(account: any, template: any, config: any, logCallb
                     password: proxyUri.password
                 },
                 command: 'connect',
-                destination: { host: 'smtp.gmail.com', port: 587 },  // ← измените на 587
-                timeout: 45000
+                destination: { host: 'smtp.gmail.com', port: 587 },
+                timeout: 60000
+            });
+
+            // ✅ ТОЛЬКО ЭТО ДОБАВЛЕНО:
+            info.socket.on('close', () => {
+                console.log(`⚠️ Socket закрыт для ${targetEmail}`);
+            });
+
+            info.socket.on('error', (err: any) => {
+                console.log(`⚠️ Socket ошибка для ${targetEmail}:`, err.message);
             });
 
             const transporter = nodemailer.createTransport({
                 connection: info.socket,
                 host: 'smtp.gmail.com',
-                port: 587,              // ← измените на 587
-                secure: false,          // ← измените на false (будет STARTTLS)
+                port: 587,
+                secure: false,
                 auth: { user: account.email, pass: account.password },
-                connectionTimeout: 15000,
-                socketTimeout: 15000,
-                greetingTimeout: 10000
+                connectionTimeout: 20000,
+                socketTimeout: 20000,
+                greetingTimeout: 15000
             });
 
             let body = template.body
