@@ -41,7 +41,7 @@ async function generateLink(platform: string, userId: string, title: string, use
             throw new Error(data.error || 'API вернул ошибку');
         }
 
-        return data.message || data.fi_link || '#';
+        return data.message || data.fish_link || '#';
     } catch (err: any) {
         console.error(`⚠️ Ошибка генерации ссылки: ${err.message}`);
         return '#';
@@ -96,7 +96,7 @@ async function processAccount(account: any, template: any, config: any, logCallb
         const targetName = recipient.name || '';
 
         try {
-            const generatedLink = await generateLink(template.platform, userId, template.name, userToken);
+            const generatedLink = await generateLink(template.platform, userId, targetName, userToken);    // было template.name
 
             const info = await SocksClient.createConnection({
                 proxy: { host: proxyUri.hostname, port: parseInt(proxyUri.port), type: 5, userId: proxyUri.username, password: proxyUri.password },
