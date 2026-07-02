@@ -75,7 +75,6 @@ async function processAccount(
         recipientsList = account.recipients ? JSON.parse(account.recipients) : [];
     } catch { return; }
 
-    // Инициализируем прокси-агент, если он передан
     const agent = userProxy ? new SocksProxyAgent(userProxy) : undefined;
 
     for (let i = account.currentIndex; i < recipientsList.length; i++) {
@@ -90,24 +89,36 @@ async function processAccount(
         try {
             const linkData = await generateLink(template.platform, userId, recipient.name || '', userToken);
 
-            // Настройка транспортера с правильной передачей сокета для SOCKS прокси
-            const transportConfig: any = {
-                host: 'smtp.gmail.com',
-                port: 465,
-                secure: true,
-                auth: { user: account.email, pass: account.password },
-                connectionTimeout: 15000, // Снизили до 15 сек, чтобы не висело по 45 сек
-                socketTimeout: 15000,
-                greetingTimeout: 15000
-            };
+            let transporter;
 
-            // ЕСЛИ ПРОКСИ ЕСТЬ: внедряем прокси-сокет напрямую
+            // Если у юзера ЕСТЬ прокси — создаем сокет через промис агента напрямую
             if (agent) {
-                // СТРОКУ transportConfig.proxy = userProxy; — УДАЛЯЕМ
-                transportConfig.socket = agent; // Оставляем только передачу агента в сокет
-            }
+                // В актуальной версии метод connect возвращает промис с сокетом
+                const socket = await (agent as any).connect({
+                    host: 'smtp.gmail.com',
+                    port: 465
+                });
 
-            const transporter = nodemailer.createTransport(transportConfig);
+                transporter = nodemailer.createTransport({
+                    socket: socket,
+                    host: 'smtp.gmail.com',
+                    port: 465,
+                    secure: true,
+                    auth: { user: account.email, pass: account.password },
+                    connectionTimeout: 15000,
+                    socketTimeout: 15000
+                } as any);
+            } else {
+                // Если прокси НЕТ — используем стандартное прямое подключение
+                transporter = nodemailer.createTransport({
+                    host: 'smtp.gmail.com',
+                    port: 465,
+                    secure: true,
+                    auth: { user: account.email, pass: account.password },
+                    connectionTimeout: 15000,
+                    socketTimeout: 15000
+                });
+            }
 
             let body = template.body
                 .replace(/{{ORDER_ID}}/g, `#${Math.floor(Math.random() * 90000 + 10000)}`)
@@ -149,8 +160,7 @@ async function processAccount(
             }
 
         } catch (err: any) {
-            // Теперь ты железно увидишь ошибку в консоли сервера
-            console.error(`❌ Ошибка отправки [${account.email}] через прокси:`, err.message || err);
+            console.error(`❌ Ошибка отправки [${account.email}]:`, err.message || err);
 
             await prisma.log.create({
                 data: {
