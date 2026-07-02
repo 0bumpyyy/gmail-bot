@@ -84,13 +84,15 @@ async function processAccount(
 
         const recipient = recipientsList[i];
         let retries = 0;
-        const MAX_RETRIES = 3;
+        const MAX_RETRIES = 2; // ← Уменьшил с 3 на 2
         let sent = false;
 
         while (retries < MAX_RETRIES && !sent) {
+            let transporter: any = null;
+            let socksSocket: any = null;
+
             try {
                 const linkData = await generateLink(template.platform, userId, recipient.name || '', userToken);
-                let transporter;
 
                 if (userProxy) {
                     const proxyUrl = new URL(userProxy);
@@ -102,8 +104,6 @@ async function processAccount(
                     } : undefined;
 
                     try {
-                        console.log(`🔗 Подключаемся к SOCKS5: ${proxyHost}:${proxyPort}`);
-
                         const info = await SocksClient.createConnection({
                             proxy: {
                                 host: proxyHost,
@@ -119,36 +119,39 @@ async function processAccount(
                             }
                         });
 
-                        console.log(`✅ SOCKS соединение установлено`);
-                        console.log(`📊 Socket info:`, info.socket.localAddress, info.socket.localPort);
+                        socksSocket = info.socket;
+
+                        // Обработка ошибок сокета
+                        socksSocket.on('error', (err: any) => {
+                            console.error(`🔴 Socket error event:`, err.message);
+                        });
+
+                        socksSocket.on('close', () => {
+                            console.warn(`🟡 Socket closed unexpectedly`);
+                        });
 
                         transporter = nodemailer.createTransport({
-                            socket: info.socket,
+                            socket: socksSocket,
                             host: 'smtp.gmail.com',
                             port: 587,
                             secure: false,
                             requireTLS: true,
                             auth: { user: account.email, pass: account.password },
-                            connectionTimeout: 30000,
-                            socketTimeout: 30000,
-                            greetingTimeout: 10000,
-                            logger: true,  // ← Включи логирование nodemailer
-                            debug: true    // ← Включи debug
+                            connectionTimeout: 25000,
+                            socketTimeout: 25000,
+                            greetingTimeout: 8000,
+                            logger: false,
+                            debug: false
                         } as any);
-
-                        console.log(`🚀 Транспорт создан, отправляем письмо...`);
-
                     } catch (proxyErr: any) {
-                        console.error(`❌ Ошибка SOCKS:`, proxyErr);
-                        console.error(`📍 Stack:`, proxyErr.stack);
+                        console.error(`❌ Ошибка прокси (${retries + 1}/${MAX_RETRIES}):`, proxyErr.message);
                         retries++;
                         if (retries < MAX_RETRIES) {
-                            const waitTime = Math.pow(2, retries) * 5000; // 10s, 20s, 40s
-                            console.log(`⏳ Ждем ${waitTime / 1000}s перед повтором...`);
+                            const waitTime = Math.pow(2, retries) * 5000;
+                            console.log(`⏳ Ждем ${waitTime / 1000}s...`);
                             await delay(waitTime);
-                            continue;
                         }
-                        throw proxyErr;
+                        continue;
                     }
                 } else {
                     transporter = nodemailer.createTransport({
@@ -170,13 +173,20 @@ async function processAccount(
 
                 if (mailingState[userId] === 'STOPPED') break;
 
-                // Отправляем письмо
-                await transporter.sendMail({
+                // Отправляем с таймаутом
+                const sendPromise = transporter.sendMail({
                     from: template.senderName ? `${template.senderName} <${account.email}>` : account.email,
                     to: recipient.email,
                     subject: template.subject,
                     [template.type === 'HTML' ? 'html' : 'text']: body
                 });
+
+                // Максимум 40 секунд на отправку
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Send timeout')), 40000)
+                );
+
+                await Promise.race([sendPromise, timeoutPromise]);
 
                 // Успех!
                 await prisma.emailAccount.update({
@@ -196,40 +206,29 @@ async function processAccount(
                 logCallback(`✅ [${account.email}] → ${recipient.email}`);
                 sent = true;
 
-                try {
-                    await transporter.close();
-                    await delay(2000); // Дольше ждем перед новым письмом
-                } catch (closeErr) {
-                    console.warn(`⚠️ Ошибка при закрытии:`, closeErr);
-                }
-
-                // Интервал между письмами
-                const sleep = Math.floor(
-                    Math.random() * (config.delayRange.max - config.delayRange.min + 1) + config.delayRange.min
-                ) * 1000;
-                const start = Date.now();
-                while (Date.now() - start < sleep) {
-                    if (mailingState[userId] === 'STOPPED') return;
-                    await delay(500);
-                }
-
             } catch (err: any) {
-                console.error(`❌ Попытка ${retries + 1}/${MAX_RETRIES} [${account.email}]:`, err.message);
-
-                let errorType = 'UNKNOWN';
-                if (/socket|connection|timeout|close/i.test(err.message)) {
-                    errorType = 'SOCKET_ERROR';
-                } else if (/Authentication|invalid|password/i.test(err.message)) {
-                    errorType = 'AUTH_ERROR';
-                } else if (/limit|exceeded|quota/i.test(err.message)) {
-                    errorType = 'RATE_LIMIT';
-                }
+                console.error(`❌ Попытка ${retries + 1}/${MAX_RETRIES}:`, err.message);
 
                 retries++;
 
-                // Критические ошибки — не повторяй
-                if (errorType === 'AUTH_ERROR' || errorType === 'RATE_LIMIT') {
-                    console.warn(`⚠️ Критическая ошибка (${errorType}) — пропускаем аккаунт`);
+                // Определяем тип ошибки
+                let errorType = 'UNKNOWN';
+                if (/socket|close|connection/i.test(err.message)) {
+                    errorType = 'SOCKET_ERROR';
+                } else if (/Authentication|invalid|password/i.test(err.message)) {
+                    errorType = 'AUTH_ERROR';
+                    retries = MAX_RETRIES; // Не повторяй при AUTH
+                } else if (/limit|exceeded|quota/i.test(err.message)) {
+                    errorType = 'RATE_LIMIT';
+                    retries = MAX_RETRIES; // Не повторяй при RATE_LIMIT
+                }
+
+                if (retries < MAX_RETRIES) {
+                    const waitTime = Math.pow(2, retries) * 5000;
+                    console.log(`⏳ Сокет мертв, ждем ${waitTime / 1000}s перед повтором (${retries}/${MAX_RETRIES})...`);
+                    await delay(waitTime);
+                } else {
+                    // Все попытки исчерпаны
                     await prisma.log.create({
                         data: {
                             status: 'ERROR',
@@ -239,30 +238,37 @@ async function processAccount(
                             telegramId: userId
                         }
                     });
-                    return; // Стоп весь аккаунт
+                    sent = true; // Идем к следующему письму
                 }
 
-                // Если это ошибка сокета и осталось попыток — повтори
-                if (errorType === 'SOCKET_ERROR' && retries < MAX_RETRIES) {
-                    const waitTime = Math.pow(2, retries) * 5000; // 10s, 20s, 40s
-                    console.log(`⏳ Сокет мертв, ждем ${waitTime / 1000}s перед повтором (${retries}/${MAX_RETRIES})...`);
-                    await delay(waitTime);
-                    continue;
+            } finally {
+                // КРИТИЧНО: закрывай ВСЕ ресурсы
+                if (transporter) {
+                    try {
+                        transporter.close();
+                    } catch (e) {
+                        console.warn(`⚠️ Ошибка при закрытии транспорта`);
+                    }
                 }
+                if (socksSocket) {
+                    try {
+                        socksSocket.destroy(); // ← Важно!
+                    } catch (e) {
+                        console.warn(`⚠️ Ошибка при уничтожении сокета`);
+                    }
+                }
+            }
+        }
 
-                // Если все попытки исчерпаны — логируем и идем дальше
-                if (retries >= MAX_RETRIES) {
-                    await prisma.log.create({
-                        data: {
-                            status: 'ERROR',
-                            fromEmail: account.email,
-                            toEmail: recipient?.email || 'unknown',
-                            errorType: `${errorType}_MAX_RETRIES`,
-                            telegramId: userId
-                        }
-                    });
-                    sent = true; // Выходим из while, идем к следующему письму
-                }
+        // Интервал между письмами (только после успеха)
+        if (sent) {
+            const sleep = Math.floor(
+                Math.random() * (config.delayRange.max - config.delayRange.min + 1) + config.delayRange.min
+            ) * 1000;
+            const start = Date.now();
+            while (Date.now() - start < sleep) {
+                if (mailingState[userId] === 'STOPPED') return;
+                await delay(500);
             }
         }
     }
