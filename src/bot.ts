@@ -522,9 +522,9 @@ mainMenu = new Menu<MyContext>('main-menu')
         const user = await prisma.user.findUnique({ where: { telegramId: userId } });
 
         if (user?.proxy) {
-            range.text("🛡 Прокси: ✅ Настроен", async (ctx) => {
+            range.text("🌐 Прокси: ✅ Настроен", async (ctx) => {
                 await ctx.editMessageText(
-                    `🛡 *Ваш текущий прокси:*\n\`${user.proxy}\`\n\nВыберите действие:`,
+                    `🌐 *Ваш текущий прокси:*\n\`${user.proxy}\`\n\nВыберите действие:`,
                     { parse_mode: 'Markdown', reply_markup: proxyActionMenu }
                 );
             });
