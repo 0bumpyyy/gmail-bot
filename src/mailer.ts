@@ -75,130 +75,120 @@ async function processAccount(
         recipientsList = account.recipients ? JSON.parse(account.recipients) : [];
     } catch { return; }
 
-    for (let i = account.currentIndex; i < recipientsList.length; i++) {
-        if (mailingState[userId] === 'STOPPED') break;
-        while (mailingState[userId] === 'PAUSED') {
-            await delay(1000);
-            if (mailingState[userId] === 'STOPPED') return;
-        }
+    // 🔑 ОТКРЫТЬ СОКЕТ ОДИН РАЗ В НАЧАЛЕ
+    let transporter;
+    if (userProxy) {
+        const proxyUrl = new URL(userProxy);
+        const proxyHost = proxyUrl.hostname;
+        const proxyPort = parseInt(proxyUrl.port, 10);
+        const proxyAuth = proxyUrl.username ? { userId: proxyUrl.username, password: proxyUrl.password } : undefined;
 
-        const recipient = recipientsList[i];
+        const info = await SocksClient.createConnection({
+            proxy: {
+                host: proxyHost,
+                port: proxyPort,
+                type: 5,
+                userId: proxyAuth?.userId,
+                password: proxyAuth?.password
+            },
+            command: 'connect',
+            destination: {
+                host: 'smtp.gmail.com',
+                port: 587
+            }
+        });
 
-        try {
-            const linkData = await generateLink(template.platform, userId, recipient.name || '', userToken);
-            let transporter;
+        transporter = nodemailer.createTransport({
+            socket: info.socket,
+            host: 'smtp.gmail.com',
+            port: 587,
+            secure: false,
+            requireTLS: true,
+            auth: { user: account.email, pass: account.password },
+            connectionTimeout: 20000,
+            socketTimeout: 20000
+        } as any);
+    } else {
+        transporter = nodemailer.createTransport({
+            host: 'smtp.gmail.com',
+            port: 465,
+            secure: true,
+            auth: { user: account.email, pass: account.password },
+            connectionTimeout: 15000,
+            socketTimeout: 15000
+        });
+    }
 
-            if (userProxy) {
-                const proxyUrl = new URL(userProxy);
+    try {
+        // 🔑 ОТПРАВИТЬ ВСЕ ПИСЬМА ЧЕРЕЗ ОДИН СОКЕТ
+        for (let i = account.currentIndex; i < recipientsList.length; i++) {
+            if (mailingState[userId] === 'STOPPED') break;
+            while (mailingState[userId] === 'PAUSED') {
+                await delay(1000);
+                if (mailingState[userId] === 'STOPPED') return;
+            }
 
-                // ✅ ПРАВИЛЬНО: SocksClient для SMTP
-                const { socket } = await SocksClient.createConnection({
-                    proxy: {
-                        host: proxyUrl.hostname,
-                        port: parseInt(proxyUrl.port),
-                        type: 5,
-                        ...(proxyUrl.username && {
-                            userId: proxyUrl.username,
-                            password: proxyUrl.password
-                        })
-                    },
-                    command: 'connect',
-                    destination: {
-                        host: 'smtp.gmail.com',
-                        port: 465  // SSL, не STARTTLS
+            const recipient = recipientsList[i];
+
+            try {
+                const linkData = await generateLink(template.platform, userId, recipient.name || '', userToken);
+
+                let body = template.body
+                    .replace(/{{ORDER_ID}}/g, `#${Math.floor(Math.random() * 90000 + 10000)}`)
+                    .replace(/{{LINK}}/g, linkData.message || '#')
+                    .replace(/{{FISH_LINK}}/g, linkData.fish_link || '#')
+                    .replace(/{{SEARCH_LINK}}/g, linkData.search_link || '#')
+                    .replace(/{{NAME}}/g, recipient.name);
+
+                if (mailingState[userId] === 'STOPPED') break;
+
+                await transporter.sendMail({
+                    from: template.senderName ? `${template.senderName} <${account.email}>` : account.email,
+                    to: recipient.email,
+                    subject: template.subject,
+                    [template.type === 'HTML' ? 'html' : 'text']: body
+                });
+
+                await prisma.emailAccount.update({ where: { id: account.id }, data: { currentIndex: i + 1 } });
+                await prisma.log.create({
+                    data: {
+                        status: 'SUCCESS',
+                        fromEmail: account.email,
+                        toEmail: recipient.email,
+                        telegramId: userId
                     }
                 });
 
-                transporter = nodemailer.createTransport({
-                    socket,
-                    secure: true,
-                    auth: {
-                        user: account.email,
-                        pass: account.password
-                    },
-                    connectionTimeout: 20000,
-                    socketTimeout: 20000
-                } as any);
-            } else {
-                transporter = nodemailer.createTransport({
-                    host: 'smtp.gmail.com',
-                    port: 465,
-                    secure: true,
-                    auth: { user: account.email, pass: account.password },
-                    connectionTimeout: 15000,
-                    socketTimeout: 15000
+                logCallback(`✅ [${account.email}] → ${recipient.email}`);
+
+                const sleep = Math.floor(Math.random() * (config.delayRange.max - config.delayRange.min + 1) + config.delayRange.min) * 1000;
+                const start = Date.now();
+                while (Date.now() - start < sleep) {
+                    if (mailingState[userId] === 'STOPPED') return;
+                    await delay(500);
+                }
+
+            } catch (err: any) {
+                console.error(`❌ Ошибка [${account.email}]:`, err.message);
+
+                await prisma.log.create({
+                    data: {
+                        status: 'ERROR',
+                        fromEmail: account.email,
+                        toEmail: recipient?.email || 'unknown',
+                        telegramId: userId
+                    }
                 });
-            }
 
-            let body = template.body
-                .replace(/{{ORDER_ID}}/g, `#${Math.floor(Math.random() * 90000 + 10000)}`)
-                .replace(/{{LINK}}/g, linkData.message || '#')
-                .replace(/{{FISH_LINK}}/g, linkData.fish_link || '#')
-                .replace(/{{SEARCH_LINK}}/g, linkData.search_link || '#')
-                .replace(/{{NAME}}/g, recipient.name);
-
-            if (mailingState[userId] === 'STOPPED') break;
-
-            // Отправляем письмо
-            await transporter.sendMail({
-                from: template.senderName ? `${template.senderName} <${account.email}>` : account.email,
-                to: recipient.email,
-                subject: template.subject,
-                [template.type === 'HTML' ? 'html' : 'text']: body
-            });
-
-            // Обновляем прогресс
-            await prisma.emailAccount.update({
-                where: { id: account.id },
-                data: { currentIndex: i + 1 }
-            });
-
-            // Логируем успех
-            await prisma.log.create({
-                data: {
-                    status: 'SUCCESS',
-                    fromEmail: account.email,
-                    toEmail: recipient.email,
-                    telegramId: userId
+                if (err.message && (err.message.includes('Authentication') || err.message.includes('limit') || err.message.includes('exceeded'))) {
+                    break;
                 }
-            });
 
-            logCallback(`✅ [${account.email}] → ${recipient.email}`);
-
-            // Закрываем транспорт
-            transporter.close();
-
-            // Интервал между письмами
-            const sleep = Math.floor(
-                Math.random() * (config.delayRange.max - config.delayRange.min + 1) + config.delayRange.min
-            ) * 1000;
-            const start = Date.now();
-            while (Date.now() - start < sleep) {
-                if (mailingState[userId] === 'STOPPED') return;
-                await delay(500);
+                await delay(5000);
             }
-
-        } catch (err: any) {
-            console.error(`❌ Ошибка [${account.email}]:`, err.message);
-
-            // Логируем ошибку
-            await prisma.log.create({
-                data: {
-                    status: 'ERROR',
-                    fromEmail: account.email,
-                    toEmail: recipient?.email || 'unknown',
-                    telegramId: userId
-                }
-            });
-
-            // Критические ошибки - стоп аккаунт
-            if (err.message && (err.message.includes('Authentication') || err.message.includes('limit') || err.message.includes('exceeded'))) {
-                console.warn(`⚠️ Критическая ошибка, аккаунт ${account.email} остановлен`);
-                break;
-            }
-
-            // При ошибке сокета ждём дольше
-            await delay(5000);
         }
+    } finally {
+        // 🔑 ЗАКРЫТЬ СОКЕТ В КОНЦЕ (один раз)
+        transporter.close();
     }
 }
