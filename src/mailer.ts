@@ -102,6 +102,8 @@ async function processAccount(
                     } : undefined;
 
                     try {
+                        console.log(`🔗 Подключаемся к SOCKS5: ${proxyHost}:${proxyPort}`);
+
                         const info = await SocksClient.createConnection({
                             proxy: {
                                 host: proxyHost,
@@ -117,6 +119,9 @@ async function processAccount(
                             }
                         });
 
+                        console.log(`✅ SOCKS соединение установлено`);
+                        console.log(`📊 Socket info:`, info.socket.localAddress, info.socket.localPort);
+
                         transporter = nodemailer.createTransport({
                             socket: info.socket,
                             host: 'smtp.gmail.com',
@@ -127,11 +132,15 @@ async function processAccount(
                             connectionTimeout: 30000,
                             socketTimeout: 30000,
                             greetingTimeout: 10000,
-                            logger: false,
-                            debug: false
+                            logger: true,  // ← Включи логирование nodemailer
+                            debug: true    // ← Включи debug
                         } as any);
+
+                        console.log(`🚀 Транспорт создан, отправляем письмо...`);
+
                     } catch (proxyErr: any) {
-                        console.error(`❌ Ошибка прокси попытка ${retries + 1}/${MAX_RETRIES}:`, proxyErr.message);
+                        console.error(`❌ Ошибка SOCKS:`, proxyErr);
+                        console.error(`📍 Stack:`, proxyErr.stack);
                         retries++;
                         if (retries < MAX_RETRIES) {
                             const waitTime = Math.pow(2, retries) * 5000; // 10s, 20s, 40s
