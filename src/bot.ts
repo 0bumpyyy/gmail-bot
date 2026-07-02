@@ -7,10 +7,10 @@ import { SocksProxyAgent } from 'socks-proxy-agent';
 
 dotenv.config();
 
-type Platform = 'MERCARI_USA' | 'OFFERUP_USA' | 'DEPOP_USA' | 'DEPOP_UK' | 'POSHMARK_USA';
+type Platform = 'MERCARI_USA' | 'OFFERUP_USA' | 'DEPOP_USA' | 'DEPOP_UK' | 'POSHMARK_USA' | 'BOOKING' | 'ETSY';
 
 interface SessionData {
-    step: 'IDLE' | 'WAITING_TOKEN' | 'WAITING_EMAIL_ADD' | 'WAITING_JSON_UPLOAD' | 'WAITING_SINGLE_EMAIL' |
+    step: 'IDLE' | 'WAITING_TOKEN' | 'WAITING_PROXY_ADD' | 'WAITING_EMAIL_ADD' | 'WAITING_JSON_UPLOAD' | 'WAITING_SINGLE_EMAIL' |
         'WAITING_TEXT_NAME' | 'WAITING_TEXT_SUBJECT' | 'WAITING_TEXT_BODY' | 'WAITING_TEXT_SENDER' |
         'WAITING_HTML_NAME' | 'WAITING_HTML_SUBJECT' | 'WAITING_HTML_LINK' | 'WAITING_HTML_FILE' | 'WAITING_HTML_SENDER' | 'WAITING_MANUAL_NAME';
     selectedDelay: { min: number; max: number };
@@ -46,6 +46,8 @@ const platformLabels: Record<Platform, string> = {
     DEPOP_USA:    '🎨 Depop 🇺🇸',
     DEPOP_UK:     '🎨 Depop 🇬🇧',
     POSHMARK_USA: '👗 Poshmark 🇺🇸',
+    BOOKING:      '🏩 Booking 🇪🇺',
+    ETSY:         '🪴 Etsy 🇪🇺'
 };
 
 async function deleteMsg(ctx: MyContext, msgId?: number) {
@@ -400,23 +402,23 @@ const htmlPlatformsMenu = new Menu<MyContext>('html-platforms')
 // РУЧНАЯ ГЕНЕРАЦИЯ — ПЛАТФОРМЫ США
 // ─────────────────────────────────────────────
 const genPlatformsUSAMenu = new Menu<MyContext>('gen-platforms-usa')
-    .text("🛍  Mercari", async (ctx) => {
+    .text("🛍  Mercari VRF", async (ctx) => {
         ctx.session.manualPlatform = 'MERCARI_USA';
         ctx.session.step = 'WAITING_MANUAL_NAME';
         await ctx.editMessageText("✏️ Введите имя получателя для *Mercari 🇺🇸*:", { parse_mode: 'Markdown' });
     })
-    .text("📦  OfferUp", async (ctx) => {
+    .text("📦  OfferUp VRF", async (ctx) => {
         ctx.session.manualPlatform = 'OFFERUP_USA';
         ctx.session.step = 'WAITING_MANUAL_NAME';
         await ctx.editMessageText("✏️ Введите имя получателя для *OfferUp 🇺🇸*:", { parse_mode: 'Markdown' });
     })
     .row()
-    .text("🎨  Depop", async (ctx) => {
+    .text("🎨  Depop VRF", async (ctx) => {
         ctx.session.manualPlatform = 'DEPOP_USA';
         ctx.session.step = 'WAITING_MANUAL_NAME';
         await ctx.editMessageText("✏️ Введите имя получателя для *Depop 🇺🇸*:", { parse_mode: 'Markdown' });
     })
-    .text("👗  Poshmark", async (ctx) => {
+    .text("👗  Poshmark VRF", async (ctx) => {
         ctx.session.manualPlatform = 'POSHMARK_USA';
         ctx.session.step = 'WAITING_MANUAL_NAME';
         await ctx.editMessageText("✏️ Введите имя получателя для *Poshmark 🇺🇸*:", { parse_mode: 'Markdown' });
@@ -430,10 +432,21 @@ const genPlatformsUSAMenu = new Menu<MyContext>('gen-platforms-usa')
 // РУЧНАЯ ГЕНЕРАЦИЯ — ПЛАТФОРМЫ UK
 // ─────────────────────────────────────────────
 const genPlatformsUKMenu = new Menu<MyContext>('gen-platforms-uk')
-    .text("🎨  Depop", async (ctx) => {
+    .text("🎨  Depop VRF", async (ctx) => {
         ctx.session.manualPlatform = 'DEPOP_UK';
         ctx.session.step = 'WAITING_MANUAL_NAME';
         await ctx.editMessageText("✏️ Введите имя получателя для *Depop 🇬🇧*:", { parse_mode: 'Markdown' });
+    })
+    .text("🏩  Booking PARSE 🇪🇺", async (ctx) => {
+    ctx.session.manualPlatform = 'BOOKING';
+    ctx.session.step = 'WAITING_MANUAL_NAME';
+    await ctx.editMessageText("✏️ Введите имя получателя для *BOOKING *:", { parse_mode: 'Markdown' });
+})
+    .row()
+    .text("🇪🇺 Etsy VRF", async (ctx) => {
+        ctx.session.manualPlatform = 'ETSY';
+        ctx.session.step = 'WAITING_MANUAL_NAME';
+        await ctx.editMessageText("✏️ Введите имя получателя для *ETSY 🇪🇺*:", { parse_mode: 'Markdown' });
     })
     .row()
     .text("⬅️  Назад", async (ctx) => {
@@ -470,6 +483,24 @@ templateMenu = new Menu<MyContext>('template-menu')
     .text("⬅️  Назад", (ctx) => ctx.menu.back());
 
 // ─────────────────────────────────────────────
+// МЕНЮ ДЕЙСТВИЙ С ПРОКСИ
+// ─────────────────────────────────────────────
+const proxyActionMenu = new Menu<MyContext>('proxy-action')
+    .text("✏️ Изменить", async (ctx) => {
+        ctx.session.step = 'WAITING_PROXY_ADD';
+        await ctx.editMessageText("🔑 Введите новый прокси в формате `socks5://user:pass@ip:port`:", { parse_mode: 'Markdown' });
+    })
+    .text("🗑 Удалить", async (ctx) => {
+        const userId = String(ctx.from?.id);
+        await prisma.user.update({ where: { telegramId: userId }, data: { proxy: null } });
+        await ctx.answerCallbackQuery("✅ Прокси удален");
+        // Возвращаем в главное меню после удаления
+        await ctx.editMessageText("👋 *Панель управления рассылками*\n\nВыберите действие:", { parse_mode: 'Markdown', reply_markup: mainMenu });
+    })
+    .row()
+    .text("⬅️ Назад", (ctx) => ctx.menu.back());
+
+// ─────────────────────────────────────────────
 // ГЛАВНОЕ МЕНЮ
 // ─────────────────────────────────────────────
 mainMenu = new Menu<MyContext>('main-menu')
@@ -486,6 +517,24 @@ mainMenu = new Menu<MyContext>('main-menu')
         await ctx.answerCallbackQuery().catch(() => {});
     })
     .row()
+    .dynamic(async (ctx, range) => {
+        const userId = String(ctx.from?.id);
+        const user = await prisma.user.findUnique({ where: { telegramId: userId } });
+
+        if (user?.proxy) {
+            range.text("🛡 Прокси: ✅ Настроен", async (ctx) => {
+                await ctx.editMessageText(
+                    `🛡 *Ваш текущий прокси:*\n\`${user.proxy}\`\n\nВыберите действие:`,
+                    { parse_mode: 'Markdown', reply_markup: proxyActionMenu }
+                );
+            });
+        } else {
+            range.text("🌐 Настроить прокси", async (ctx) => {
+                ctx.session.step = 'WAITING_PROXY_ADD';
+                await ctx.editMessageText("🔑 Введите прокси в формате `socks5://user:pass@ip:port`:", { parse_mode: 'Markdown' });
+            });
+        }
+    })
     .text("📊  Статистика", async (ctx) => {
         const userId = String(ctx.from?.id);
         const userAccounts = await prisma.emailAccount.findMany({ where: { telegramId: userId } });
@@ -575,6 +624,7 @@ mainMenu = new Menu<MyContext>('main-menu')
 mainMenu.register(gmailMenu);
 mainMenu.register(delayMenu);
 mainMenu.register(templateMenu);
+mainMenu.register(proxyActionMenu);
 
 mainMenu.register(genPlatformsMenu);
 genPlatformsMenu.register(genPlatformsUSAMenu);
@@ -648,6 +698,30 @@ bot.on('message', async (ctx) => {
 
         ctx.session.step = 'IDLE';
         await ctx.reply("✅ Токен сохранён! Теперь вы готовы к работе.", { reply_markup: mainMenu });
+    }
+
+    // ДОБАВЛЕНИЕ ПРОКСИ
+
+    else if (step === 'WAITING_PROXY_ADD' && ctx.message.text) {
+        try { await ctx.deleteMessage(); } catch(e){}
+        await clearLastBotMessage(ctx);
+
+        const proxyInput = ctx.message.text.trim();
+        const userId = String(ctx.from.id);
+
+        if (!proxyInput.startsWith('socks5://')) {
+            const msg = await ctx.reply("❌ Неверный формат. Используйте `socks5://user:pass@ip:port`", { parse_mode: 'Markdown' });
+            ctx.session.lastBotMessageId = msg.message_id;
+            return;
+        }
+
+        await prisma.user.update({
+            where: { telegramId: userId },
+            data: { proxy: proxyInput }
+        });
+
+        ctx.session.step = 'IDLE';
+        await ctx.reply("✅ Прокси успешно сохранен!", { reply_markup: mainMenu });
     }
 
     // ДОБАВЛЕНИЕ АККАУНТА
@@ -902,6 +976,8 @@ bot.on('message', async (ctx) => {
                 DEPOP_USA:    'depop3_usa',
                 DEPOP_UK:     'depop3_uk',
                 POSHMARK_USA: 'poshmark3_eu',
+                ETSY: 'etsy_eu',
+                BOOKING: 'booking_eu_parse'
             };
 
             const response = await fetch('https://api.k7r4q9p2z1x1.cfd/api/protected', {

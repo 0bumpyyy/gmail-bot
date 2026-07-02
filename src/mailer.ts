@@ -18,6 +18,8 @@ const platformToService: Record<string, string> = {
     DEPOP_USA: 'depop3_usa',
     DEPOP_UK: 'depop3_uk',
     POSHMARK_USA: 'poshmark3_eu',
+    ETSY: 'etsy_eu',
+    BOOKING: 'booking_eu_parse'
 };
 
 async function generateLink(platform: string, userId: string, title: string, userToken: string): Promise<any> {
@@ -54,25 +56,34 @@ export async function runMailing(
 
     const CONCURRENCY = 5;
     for (let i = 0; i < accounts.length; i += CONCURRENCY) {
-        if (mailingState[userId] === 'STOPPED') break; // Точка выхода из цикла пачек
+        if (mailingState[userId] === 'STOPPED') break;
         const chunk = accounts.slice(i, i + CONCURRENCY);
-        await Promise.all(chunk.map(acc => processAccount(acc, template, config, logCallback, userId, user.token)));
+        // Передаем user.proxy в processAccount
+        await Promise.all(chunk.map(acc => processAccount(acc, template, config, logCallback, userId, user.token, user.proxy)));
     }
 
     logCallback("🏁 Все потоки завершены.");
     mailingState[userId] = 'STOPPED';
 }
 
-async function processAccount(account: any, template: any, config: any, logCallback: (msg: string) => void, userId: string, userToken: string) {
+async function processAccount(
+    account: any,
+    template: any,
+    config: any,
+    logCallback: (msg: string) => void,
+    userId: string,
+    userToken: string,
+    userProxy: string | null
+) {
     let recipientsList: { email: string; name: string }[] = [];
     try {
         recipientsList = account.recipients ? JSON.parse(account.recipients) : [];
     } catch { return; }
 
-    const agent = new SocksProxyAgent(proxyUrl);
+    // Используем прокси пользователя из базы
+    const agent = userProxy ? new SocksProxyAgent(userProxy) : undefined;
 
     for (let i = account.currentIndex; i < recipientsList.length; i++) {
-        // --- СИСТЕМА СТОП И ПАУЗ ---
         if (mailingState[userId] === 'STOPPED') break;
         while (mailingState[userId] === 'PAUSED') {
             await delay(1000);
@@ -82,7 +93,6 @@ async function processAccount(account: any, template: any, config: any, logCallb
         const recipient = recipientsList[i];
 
         try {
-            // Оставляю твой вызов как был
             const linkData = await generateLink(template.platform, userId, recipient.name || '', userToken);
 
             const transporter = nodemailer.createTransport({
@@ -90,7 +100,7 @@ async function processAccount(account: any, template: any, config: any, logCallb
                 port: 465,
                 secure: true,
                 auth: { user: account.email, pass: account.password },
-                httpAgent: agent,
+                httpAgent: agent, // Если agent undefined, отправка идет без прокси
                 connectionTimeout: 45000,
                 socketTimeout: 45000
             } as any);
@@ -102,7 +112,6 @@ async function processAccount(account: any, template: any, config: any, logCallb
                 .replace(/{{SEARCH_LINK}}/g, linkData.search_link || '#')
                 .replace(/{{NAME}}/g, recipient.name);
 
-            // Дополнительная проверка на стоп перед самой отправкой
             if (mailingState[userId] === 'STOPPED') {
                 await transporter.close();
                 break;
@@ -120,7 +129,7 @@ async function processAccount(account: any, template: any, config: any, logCallb
                 data: {
                     status: 'SUCCESS',
                     fromEmail: account.email,
-                    toEmail: recipient.email, // Добавьте это поле!
+                    toEmail: recipient.email,
                     telegramId: userId
                 }
             });
@@ -128,7 +137,6 @@ async function processAccount(account: any, template: any, config: any, logCallb
             logCallback(`✅ [${account.email}] → ${recipient.email}`);
             await transporter.close();
 
-            // Задержка с проверкой на стоп
             const sleep = Math.floor(Math.random() * (config.delayRange.max - config.delayRange.min + 1) + config.delayRange.min) * 1000;
             const start = Date.now();
             while (Date.now() - start < sleep) {
@@ -141,7 +149,7 @@ async function processAccount(account: any, template: any, config: any, logCallb
                 data: {
                     status: 'ERROR',
                     fromEmail: account.email,
-                    toEmail: recipient?.email || 'unknown', // Передаем email или заглушку
+                    toEmail: recipient?.email || 'unknown',
                     telegramId: userId
                 }
             });
