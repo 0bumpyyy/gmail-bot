@@ -71,7 +71,7 @@ async function processAccount(account: any, template: any, config: any, logCallb
         recipientsList = account.recipients ? JSON.parse(account.recipients) : [];
     } catch { return; }
 
-   // const agent = new SocksProxyAgent(proxyUrl);
+   const agent = new SocksProxyAgent(proxyUrl);
 
     for (let i = account.currentIndex; i < recipientsList.length; i++) {
         if (mailingState[userId] === 'STOPPED') break;
@@ -87,7 +87,7 @@ async function processAccount(account: any, template: any, config: any, logCallb
                 port: 465,
                 secure: true,
                 auth: { user: account.email, pass: account.password },
-             //   httpAgent: agent,
+                httpAgent: agent,
                 connectionTimeout: 45000,
                 socketTimeout: 45000
             } as any);
