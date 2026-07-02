@@ -96,7 +96,7 @@ async function processAccount(
                 const proxyPort = parseInt(proxyUrl.port, 10);
                 const proxyAuth = proxyUrl.username ? { userId: proxyUrl.username, password: proxyUrl.password } : undefined;
 
-                // Железобетонно создаем TCP-туннель через прокси напрямую к Gmail
+                // Железобетонно создаем TCP-туннель через прокси к Gmail на порт 587
                 const info = await SocksClient.createConnection({
                     proxy: {
                         host: proxyHost,
@@ -108,16 +108,17 @@ async function processAccount(
                     command: 'connect',
                     destination: {
                         host: 'smtp.gmail.com',
-                        port: 465
+                        port: 587 // Переключили на 587
                     }
                 });
 
-                // Отдаем чистый, уже соединенный сокет в nodemailer
+                // Передаем сокет в nodemailer с поддержкой STARTTLS
                 transporter = nodemailer.createTransport({
                     socket: info.socket,
                     host: 'smtp.gmail.com',
-                    port: 465,
-                    secure: true,
+                    port: 587,
+                    secure: false, // Для 587 порта secure должен быть false
+                    requireTLS: true, // Но TLS при этом строго обязателен
                     auth: { user: account.email, pass: account.password },
                     connectionTimeout: 15000,
                     socketTimeout: 15000
