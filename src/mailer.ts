@@ -96,7 +96,7 @@ async function processAccount(
                 const proxyPort = parseInt(proxyUrl.port, 10);
                 const proxyAuth = proxyUrl.username ? { userId: proxyUrl.username, password: proxyUrl.password } : undefined;
 
-                // Открываем чистое TCP-подключение к порту 465 (Gmail SSL)
+                // 1. Открываем базовое TCP-подключение через прокси строго на порт 587
                 const info = await SocksClient.createConnection({
                     proxy: {
                         host: proxyHost,
@@ -108,19 +108,20 @@ async function processAccount(
                     command: 'connect',
                     destination: {
                         host: 'smtp.gmail.com',
-                        port: 465
+                        port: 587 // Переключаемся на порт STARTTLS
                     }
                 });
 
-                // Создаем транспорт на базе ЭТОГО конкретного сокета
+                // 2. Инициализируем транспорт
                 transporter = nodemailer.createTransport({
                     socket: info.socket,
                     host: 'smtp.gmail.com',
-                    port: 465,
-                    secure: true,
+                    port: 587,
+                    secure: false,       // Для 587 портаsecure должен быть false!
+                    requireTLS: true,    // Это заставит nodemailer поднять TLS сразу после подключения
                     auth: { user: account.email, pass: account.password },
-                    connectionTimeout: 15000,
-                    socketTimeout: 15000
+                    connectionTimeout: 20000, // Увеличим таймауты для надежности на Railway
+                    socketTimeout: 20000
                 } as any);
             } else {
                 // Если прокси нет — обычная отправка напрямую
