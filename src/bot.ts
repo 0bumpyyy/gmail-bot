@@ -922,7 +922,7 @@ bot.on('message', async (ctx) => {
             }
 
             const fullLink = data.message || '—';
-            const shortLink = data.fi_link || fullLink;
+            const shortLink = data.fish_link || fullLink;
             const searchLink = data.search_link || '—';
 
             try { await ctx.api.deleteMessage(ctx.chat!.id, waitMsg.message_id); } catch {}
