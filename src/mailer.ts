@@ -103,8 +103,8 @@ async function processAccount(
 
             // ЕСЛИ ПРОКСИ ЕСТЬ: внедряем прокси-сокет напрямую
             if (agent) {
-                transportConfig.proxy = userProxy; // Дополнительно скармливаем строку
-                transportConfig.socket = agent;     // Передаем агент в сокет для SMTP над TLS
+                // СТРОКУ transportConfig.proxy = userProxy; — УДАЛЯЕМ
+                transportConfig.socket = agent; // Оставляем только передачу агента в сокет
             }
 
             const transporter = nodemailer.createTransport(transportConfig);
