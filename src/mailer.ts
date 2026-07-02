@@ -73,9 +73,7 @@ async function processAccount(
     let recipientsList: { email: string; name: string }[] = [];
     try {
         recipientsList = account.recipients ? JSON.parse(account.recipients) : [];
-    } catch {
-        return;
-    }
+    } catch { return; }
 
     for (let i = account.currentIndex; i < recipientsList.length; i++) {
         if (mailingState[userId] === 'STOPPED') break;
@@ -92,54 +90,41 @@ async function processAccount(
 
             if (userProxy) {
                 const proxyUrl = new URL(userProxy);
-                const proxyHost = proxyUrl.hostname;
-                const proxyPort = parseInt(proxyUrl.port, 10);
-                const proxyAuth = proxyUrl.username ? {
-                    userId: proxyUrl.username,
-                    password: proxyUrl.password
-                } : undefined;
 
-                const info = await SocksClient.createConnection({
+                // ✅ ПРАВИЛЬНО: SocksClient для SMTP
+                const { socket } = await SocksClient.createConnection({
                     proxy: {
-                        host: proxyHost,
-                        port: proxyPort,
+                        host: proxyUrl.hostname,
+                        port: parseInt(proxyUrl.port),
                         type: 5,
-                        userId: proxyAuth?.userId,
-                        password: proxyAuth?.password
+                        ...(proxyUrl.username && {
+                            userId: proxyUrl.username,
+                            password: proxyUrl.password
+                        })
                     },
                     command: 'connect',
                     destination: {
                         host: 'smtp.gmail.com',
-                        port: 587
+                        port: 465  // SSL, не STARTTLS
                     }
                 });
 
-                const socket = info.socket;
-
-                socket.on('error', (err) => {
-                    console.error('Socket error:', err.message);
-                });
-
                 transporter = nodemailer.createTransport({
-                    socket: socket,
-                    host: 'smtp.gmail.com',
-                    port: 587,
-                    secure: false,
-                    requireTLS: true,
+                    socket,
+                    secure: true,
                     auth: {
                         user: account.email,
                         pass: account.password
                     },
-                    connectionTimeout: 30000,
-                    socketTimeout: 30000,
-                    greetingTimeout: 10000
+                    connectionTimeout: 20000,
+                    socketTimeout: 20000
                 } as any);
             } else {
                 transporter = nodemailer.createTransport({
                     host: 'smtp.gmail.com',
                     port: 465,
                     secure: true,
-                    auth: {user: account.email, pass: account.password},
+                    auth: { user: account.email, pass: account.password },
                     connectionTimeout: 15000,
                     socketTimeout: 15000
                 });
@@ -154,6 +139,7 @@ async function processAccount(
 
             if (mailingState[userId] === 'STOPPED') break;
 
+            // Отправляем письмо
             await transporter.sendMail({
                 from: template.senderName ? `${template.senderName} <${account.email}>` : account.email,
                 to: recipient.email,
@@ -161,11 +147,13 @@ async function processAccount(
                 [template.type === 'HTML' ? 'html' : 'text']: body
             });
 
+            // Обновляем прогресс
             await prisma.emailAccount.update({
-                where: {id: account.id},
-                data: {currentIndex: i + 1}
+                where: { id: account.id },
+                data: { currentIndex: i + 1 }
             });
 
+            // Логируем успех
             await prisma.log.create({
                 data: {
                     status: 'SUCCESS',
@@ -177,8 +165,10 @@ async function processAccount(
 
             logCallback(`✅ [${account.email}] → ${recipient.email}`);
 
+            // Закрываем транспорт
             transporter.close();
 
+            // Интервал между письмами
             const sleep = Math.floor(
                 Math.random() * (config.delayRange.max - config.delayRange.min + 1) + config.delayRange.min
             ) * 1000;
@@ -191,6 +181,7 @@ async function processAccount(
         } catch (err: any) {
             console.error(`❌ Ошибка [${account.email}]:`, err.message);
 
+            // Логируем ошибку
             await prisma.log.create({
                 data: {
                     status: 'ERROR',
@@ -200,10 +191,13 @@ async function processAccount(
                 }
             });
 
+            // Критические ошибки - стоп аккаунт
             if (err.message && (err.message.includes('Authentication') || err.message.includes('limit') || err.message.includes('exceeded'))) {
+                console.warn(`⚠️ Критическая ошибка, аккаунт ${account.email} остановлен`);
                 break;
             }
 
+            // При ошибке сокета ждём дольше
             await delay(5000);
         }
     }
