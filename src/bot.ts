@@ -26,8 +26,9 @@ interface SessionData {
 }
 type MyContext = Context & SessionFlavor<SessionData>;
 
-const proxyUrl = process.env.PROXY_URL || '';
-const proxyAgent = new SocksProxyAgent(proxyUrl);
+const proxyUrl = process.env.PROXY_URL;
+// Создаем агент только если строка не пустая, иначе ставим undefined
+const proxyAgent = proxyUrl ? new SocksProxyAgent(proxyUrl) : undefined;
 
 const bot = new Bot<MyContext>(process.env.TELEGRAM_BOT_TOKEN!, {
     client: {
@@ -460,7 +461,7 @@ const genPlatformsMenu = new Menu<MyContext>('gen-platforms')
     .text("🇺🇸  США", async (ctx) => {
         await ctx.editMessageText("🇺🇸 Выберите платформу:", { reply_markup: genPlatformsUSAMenu });
     })
-    .text("🇬🇧  UK", async (ctx) => {
+    .text("🇪🇺  EU", async (ctx) => {
         await ctx.editMessageText("🇬🇧 Выберите платформу:", { reply_markup: genPlatformsUKMenu });
     })
     .row()
