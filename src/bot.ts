@@ -529,7 +529,7 @@ mainMenu = new Menu<MyContext>('main-menu')
                 );
             });
         } else {
-            range.text("🌐 Настроить прокси", async (ctx) => {
+            range.text("🌐 PROXY", async (ctx) => {
                 ctx.session.step = 'WAITING_PROXY_ADD';
                 await ctx.editMessageText("🔑 Введите прокси в формате `socks5://user:pass@ip:port`:", { parse_mode: 'Markdown' });
             });
