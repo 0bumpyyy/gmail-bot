@@ -70,6 +70,7 @@ async function processAccount(
     userToken: string,
     userProxy: string | null
 ) {
+    userProxy = null;
     let recipientsList: { email: string; name: string }[] = [];
     try {
         recipientsList = account.recipients ? JSON.parse(account.recipients) : [];
