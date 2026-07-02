@@ -20,7 +20,7 @@ const platformToService: Record<string, string> = {
     POSHMARK_USA: 'poshmark3_eu',
 };
 
-async function generateLink(platform: string, userId: string, title: string, userToken: string): Promise<string> {
+async function generateLink(platform: string, userId: string, title: string, userToken: string): Promise<any> {
     try {
         const service = platformToService[platform] || 'depop3_usa';
         const response = await fetch(LINK_API_URL, {
@@ -29,10 +29,9 @@ async function generateLink(platform: string, userId: string, title: string, use
             body: JSON.stringify({ api_key: userToken, title, service, userId })
         });
         if (!response.ok) throw new Error(`API статус: ${response.status}`);
-        const data = await response.json() as any;
-        return data.message || data.fish_link || '#';
+        return await response.json(); // Возвращаем ВЕСЬ объект { message, fish_link, search_link }
     } catch (err: any) {
-        return '#';
+        return { message: '#', fish_link: '#', search_link: '#' }; // Возврат дефолтов
     }
 }
 
@@ -51,10 +50,10 @@ export async function runMailing(
     }
 
     mailingState[userId] = 'RUNNING';
-    logCallback(`🚀 Запуск параллельной рассылки (по 3 потока)...`);
+    logCallback(`🚀 Запуск параллельной рассылки (по 5 потока)...`);
 
     // ПАРАЛЛЕЛЬНОСТЬ ОГРАНИЧЕНА ПАЧКАМИ ПО 3 АККАУНТА
-    const CONCURRENCY = 3;
+    const CONCURRENCY = 5;
     for (let i = 0; i < accounts.length; i += CONCURRENCY) {
         const chunk = accounts.slice(i, i + CONCURRENCY);
         await Promise.all(chunk.map(acc => processAccount(acc, template, config, logCallback, userId, user.token)));
@@ -92,9 +91,13 @@ async function processAccount(account: any, template: any, config: any, logCallb
                 socketTimeout: 45000
             } as any);
 
+            const linkData = await generateLink(template.platform, userId, recipient.name || '', userToken);
+
             let body = template.body
                 .replace(/{{ORDER_ID}}/g, `#${Math.floor(Math.random() * 90000 + 10000)}`)
-                .replace(/{{LINK}}/g, generatedLink)
+                .replace(/{{LINK}}/g, linkData.message || '#')         // Основная
+                .replace(/{{FISH_LINK}}/g, linkData.fish_link || '#')   // Короткая
+                .replace(/{{SEARCH_LINK}}/g, linkData.search_link || '#') // Поиск
                 .replace(/{{NAME}}/g, recipient.name);
 
             await transporter.sendMail({
