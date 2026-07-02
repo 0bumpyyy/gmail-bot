@@ -51,9 +51,10 @@ model Template {
 model Log {
   id        Int      @id @default(autoincrement())
   fromEmail String
-  toEmail   String
-  status    String   // "SUCCESS" или "ERROR"
-  errorMsg  String?
+  toEmail   String   // <-- ОБЯЗАТЕЛЬНОЕ
+  status    String
+  errorMsg  String?  // Можно пропустить (знак ?)
+  telegramId String
   sentAt    DateTime @default(now())
 }
 
