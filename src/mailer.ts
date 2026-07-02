@@ -1,5 +1,5 @@
 import * as nodemailer from 'nodemailer';
-import { SocksProxyAgent } from 'socks-proxy-agent';
+import { SocksClient } from 'socks';
 import { prisma } from './db.js';
 
 const LINK_API_URL = 'https://api.k7r4q9p2z1x1.cfd/api/protected';
@@ -75,8 +75,6 @@ async function processAccount(
         recipientsList = account.recipients ? JSON.parse(account.recipients) : [];
     } catch { return; }
 
-    const agent = userProxy ? new SocksProxyAgent(userProxy) : undefined;
-
     for (let i = account.currentIndex; i < recipientsList.length; i++) {
         if (mailingState[userId] === 'STOPPED') break;
         while (mailingState[userId] === 'PAUSED') {
@@ -91,16 +89,32 @@ async function processAccount(
 
             let transporter;
 
-            // Если у юзера ЕСТЬ прокси — создаем сокет через промис агента напрямую
-            if (agent) {
-                // В актуальной версии метод connect возвращает промис с сокетом
-                const socket = await (agent as any).connect({
-                    host: 'smtp.gmail.com',
-                    port: 465
+            if (userProxy) {
+                // Разбираем строку прокси (формат socks5://user:pass@host:port или socks5://host:port)
+                const proxyUrl = new URL(userProxy);
+                const proxyHost = proxyUrl.hostname;
+                const proxyPort = parseInt(proxyUrl.port, 10);
+                const proxyAuth = proxyUrl.username ? { userId: proxyUrl.username, password: proxyUrl.password } : undefined;
+
+                // Железобетонно создаем TCP-туннель через прокси напрямую к Gmail
+                const info = await SocksClient.createConnection({
+                    proxy: {
+                        host: proxyHost,
+                        port: proxyPort,
+                        type: 5, // SOCKS5
+                        userId: proxyAuth?.userId,
+                        password: proxyAuth?.password
+                    },
+                    command: 'connect',
+                    destination: {
+                        host: 'smtp.gmail.com',
+                        port: 465
+                    }
                 });
 
+                // Отдаем чистый, уже соединенный сокет в nodemailer
                 transporter = nodemailer.createTransport({
-                    socket: socket,
+                    socket: info.socket,
                     host: 'smtp.gmail.com',
                     port: 465,
                     secure: true,
@@ -109,7 +123,7 @@ async function processAccount(
                     socketTimeout: 15000
                 } as any);
             } else {
-                // Если прокси НЕТ — используем стандартное прямое подключение
+                // Если прокси нет — отправляем напрямую
                 transporter = nodemailer.createTransport({
                     host: 'smtp.gmail.com',
                     port: 465,
