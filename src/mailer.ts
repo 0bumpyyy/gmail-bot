@@ -107,7 +107,7 @@ async function processAccount(account: any, template: any, config: any, logCallb
                     password: proxyUri.password
                 },
                 command: 'connect',
-                destination: { host: 'smtp.gmail.com', port: 587 },
+                destination: { host: 'smtp.gmail.com', port: 465 }, // <--- ПОРТ 465
                 timeout: 60000
             });
 
@@ -123,12 +123,12 @@ async function processAccount(account: any, template: any, config: any, logCallb
             const transporter = nodemailer.createTransport({
                 connection: info.socket,
                 host: 'smtp.gmail.com',
-                port: 587,
-                secure: false,
+                port: 465, // <--- ПОРТ 465
+                secure: true, // <--- SECURE: TRUE
                 auth: { user: account.email, pass: account.password },
-                connectionTimeout: 20000,
-                socketTimeout: 20000,
-                greetingTimeout: 15000
+                connectionTimeout: 30000,
+                socketTimeout: 30000,
+                greetingTimeout: 20000
             });
 
             let body = template.body
@@ -136,20 +136,20 @@ async function processAccount(account: any, template: any, config: any, logCallb
                 .replace(/{{LINK}}/g, generatedLink)
                 .replace(/{{NAME}}/g, targetName);
 
-            await transporter.sendMail({
-                from: template.senderName ? `${template.senderName} <${account.email}>` : account.email,
-                to: targetEmail,
-                subject: template.subject,
-                [template.type === 'HTML' ? 'html' : 'text']: body
-            });
-
             try {
-                await transporter.close();
-            } catch {}
+                await transporter.sendMail({
+                    from: template.senderName ? `${template.senderName} <${account.email}>` : account.email,
+                    to: targetEmail,
+                    subject: template.subject,
+                    [template.type === 'HTML' ? 'html' : 'text']: body
+                });
 
-            try {
-                info.socket.destroy();
-            } catch {}
+                logCallback(`✅ [${account.email}] Письмо ушло!`);
+            } finally {
+                // В блоке finally гарантируем закрытие
+                try { await transporter.close(); } catch {}
+                try { info.socket.destroy(); } catch {}
+            }
 
             index++;
             await prisma.emailAccount.update({ where: { id: account.id }, data: { currentIndex: index } });
