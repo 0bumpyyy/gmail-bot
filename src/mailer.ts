@@ -73,7 +73,9 @@ async function processAccount(
     let recipientsList: { email: string; name: string }[] = [];
     try {
         recipientsList = account.recipients ? JSON.parse(account.recipients) : [];
-    } catch { return; }
+    } catch {
+        return;
+    }
 
     // Идем строго по списку получателей
     for (let i = account.currentIndex; i < recipientsList.length; i++) {
@@ -89,47 +91,59 @@ async function processAccount(
             const linkData = await generateLink(template.platform, userId, recipient.name || '', userToken);
             let transporter;
 
-            // Если есть прокси — создаем сокет СТРОГО под текущее письмо
             if (userProxy) {
                 const proxyUrl = new URL(userProxy);
                 const proxyHost = proxyUrl.hostname;
                 const proxyPort = parseInt(proxyUrl.port, 10);
-                const proxyAuth = proxyUrl.username ? { userId: proxyUrl.username, password: proxyUrl.password } : undefined;
+                const proxyAuth = proxyUrl.username ? {
+                    userId: proxyUrl.username,
+                    password: proxyUrl.password
+                } : undefined;
 
-                // 1. Открываем базовое TCP-подключение через прокси строго на порт 587
-                const info = await SocksClient.createConnection({
-                    proxy: {
-                        host: proxyHost,
-                        port: proxyPort,
-                        type: 5,
-                        userId: proxyAuth?.userId,
-                        password: proxyAuth?.password
-                    },
-                    command: 'connect',
-                    destination: {
+                try {
+                    const info = await SocksClient.createConnection({
+                        proxy: {
+                            host: proxyHost,
+                            port: proxyPort,
+                            type: 5,
+                            userId: proxyAuth?.userId,
+                            password: proxyAuth?.password
+                        },
+                        command: 'connect',
+                        destination: {
+                            host: 'smtp.gmail.com',
+                            port: 587
+                        }
+                    });
+
+                    // 🔑 КЛЮЧЕВЫЕ ИЗМЕНЕНИЯ:
+                    transporter = nodemailer.createTransport({
+                        socket: info.socket,
                         host: 'smtp.gmail.com',
-                        port: 587 // Переключаемся на порт STARTTLS
-                    }
-                });
-
-                // 2. Инициализируем транспорт
-                transporter = nodemailer.createTransport({
-                    socket: info.socket,
-                    host: 'smtp.gmail.com',
-                    port: 587,
-                    secure: false,       // Для 587 портаsecure должен быть false!
-                    requireTLS: true,    // Это заставит nodemailer поднять TLS сразу после подключения
-                    auth: { user: account.email, pass: account.password },
-                    connectionTimeout: 20000, // Увеличим таймауты для надежности на Railway
-                    socketTimeout: 20000
-                } as any);
+                        port: 587,
+                        secure: false,
+                        requireTLS: true,
+                        auth: {
+                            user: account.email,
+                            pass: account.password
+                        },
+                        connectionTimeout: 30000,  // ⬆️ Увеличили
+                        socketTimeout: 30000,       // ⬆️ Увеличили
+                        greetingTimeout: 10000,     // ➕ Добавили
+                        logger: false,
+                        debug: false
+                    } as any);
+                } catch (proxyErr: any) {
+                    console.error(`❌ Ошибка подключения через прокси:`, proxyErr.message);
+                    await delay(3000); // Подожди перед повтором
+                    continue; // Переходи к следующему письму
+                }
             } else {
-                // Если прокси нет — обычная отправка напрямую
                 transporter = nodemailer.createTransport({
                     host: 'smtp.gmail.com',
                     port: 465,
                     secure: true,
-                    auth: { user: account.email, pass: account.password },
+                    auth: {user: account.email, pass: account.password},
                     connectionTimeout: 15000,
                     socketTimeout: 15000
                 });
@@ -142,9 +156,7 @@ async function processAccount(
                 .replace(/{{SEARCH_LINK}}/g, linkData.search_link || '#')
                 .replace(/{{NAME}}/g, recipient.name);
 
-            if (mailingState[userId] === 'STOPPED') {
-                break;
-            }
+            if (mailingState[userId] === 'STOPPED') break;
 
             // Отправляем письмо
             await transporter.sendMail({
@@ -154,8 +166,11 @@ async function processAccount(
                 [template.type === 'HTML' ? 'html' : 'text']: body
             });
 
-            // Обновляем индекс в базе и пишем успешный лог
-            await prisma.emailAccount.update({ where: { id: account.id }, data: { currentIndex: i + 1 } });
+            await prisma.emailAccount.update({
+                where: {id: account.id},
+                data: {currentIndex: i + 1}
+            });
+
             await prisma.log.create({
                 data: {
                     status: 'SUCCESS',
@@ -167,12 +182,18 @@ async function processAccount(
 
             logCallback(`✅ [${account.email}] → ${recipient.email}`);
 
-            // Важно: уничтожаем сокет и закрываем транспорт СРАЗУ после отправки,
-            // чтобы при следующем шаге цикла создалось абсолютно чистое новое подключение!
-            transporter.close();
+            // 🔑 Закрываем транспорт с небольшой задержкой
+            try {
+                await transporter.close();
+                await delay(1000); // Даем сокету время на очистку
+            } catch (closeErr) {
+                console.warn(`⚠️ Ошибка при закрытии соединения:`, closeErr);
+            }
 
-            // Спим заданный интервал
-            const sleep = Math.floor(Math.random() * (config.delayRange.max - config.delayRange.min + 1) + config.delayRange.min) * 1000;
+            // Интервал между письмами
+            const sleep = Math.floor(
+                Math.random() * (config.delayRange.max - config.delayRange.min + 1) + config.delayRange.min
+            ) * 1000;
             const start = Date.now();
             while (Date.now() - start < sleep) {
                 if (mailingState[userId] === 'STOPPED') return;
@@ -191,13 +212,19 @@ async function processAccount(
                 }
             });
 
-            // Если это лимиты или неверный пароль — стопаем этот аккаунт полностью
-            if (err.message && (err.message.includes('Authentication') || err.message.includes('limit') || err.message.includes('exceeded'))) {
+            // Критические ошибки - стоп аккаунту
+            if (err.message && /Authentication|limit|exceeded|Invalid/i.test(err.message)) {
+                console.warn(`⚠️ Аккаунт ${account.email} деактивирован (критическая ошибка)`);
                 break;
             }
 
-            // При любой другой сетевой ошибке ждем 5 сек и идем дальше
-            await delay(5000);
+            // Ошибки сокета - подожди дольше
+            if (err.message && /socket|connection|timeout|close/i.test(err.message)) {
+                console.warn(`⚠️ Проблема с сокетом, ожидание 10 сек...`);
+                await delay(10000); // Увеличенная задержка
+            } else {
+                await delay(5000);
+            }
         }
     }
 }
