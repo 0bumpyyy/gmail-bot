@@ -931,8 +931,8 @@ bot.on('message', async (ctx) => {
                 `🔗 *Ссылка сгенерирована*\n\n` +
                 `🏪 Площадка: *${label}*\n` +
                 `👤 Имя: *${name}*\n\n` +
-                `📎 Основная:\n\`${fullLink}\`\n\n` +
-                `✂️ Короткая:\n\`${shortLink}\`\n\n` +
+                `📎 Основная:\n\`${shortLink}\`\n\n` +
+                `✂️ Короткая:\n\`${fullLink}\`\n\n` +
                 `🔍 Поиск:\n\`${searchLink}\``,
                 { parse_mode: 'Markdown', reply_markup: mainMenu }
             );
