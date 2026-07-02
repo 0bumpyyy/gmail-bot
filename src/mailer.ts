@@ -1,5 +1,5 @@
 import * as nodemailer from 'nodemailer';
-import { SocksClient } from 'socks';
+import { SocksProxyAgent } from 'socks-proxy-agent';
 import * as dotenv from 'dotenv';
 import { prisma } from './db.js';
 
@@ -13,10 +13,10 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 export const mailingState: Record<string, any> = {};
 
 const platformToService: Record<string, string> = {
-    MERCARI_USA:  'mercari3_usa',
-    OFFERUP_USA:  'offerup3_usa',
-    DEPOP_USA:    'depop3_usa',
-    DEPOP_UK:     'depop3_uk',
+    MERCARI_USA: 'mercari3_usa',
+    OFFERUP_USA: 'offerup3_usa',
+    DEPOP_USA: 'depop3_usa',
+    DEPOP_UK: 'depop3_uk',
     POSHMARK_USA: 'poshmark3_eu',
 };
 
@@ -26,24 +26,12 @@ async function generateLink(platform: string, userId: string, title: string, use
         const response = await fetch(LINK_API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                api_key: userToken,
-                title,
-                service,
-                userId
-            })
+            body: JSON.stringify({ api_key: userToken, title, service, userId })
         });
-
         if (!response.ok) throw new Error(`API статус: ${response.status}`);
         const data = await response.json() as any;
-
-        if (data.error || !data.message) {
-            throw new Error(data.error || 'API вернул ошибку');
-        }
-
         return data.message || data.fish_link || '#';
     } catch (err: any) {
-        console.error(`⚠️ Ошибка генерации ссылки: ${err.message}`);
         return '#';
     }
 }
@@ -57,109 +45,73 @@ export async function runMailing(
     const accounts = await prisma.emailAccount.findMany({ where: { isActive: true, telegramId: userId } });
     const user = await prisma.user.findUnique({ where: { telegramId: userId } });
 
-    if (!template || accounts.length === 0) {
-        logCallback("❌ Ошибка: нет активного шаблона или аккаунтов.");
-        return;
-    }
-
-    if (!user?.token) {
-        logCallback("❌ Ошибка: токен API не установлен. Добавьте его в управлении токеном.");
+    if (!template || accounts.length === 0 || !user?.token) {
+        logCallback("❌ Ошибка: проверьте шаблон, аккаунты или токен.");
         return;
     }
 
     mailingState[userId] = 'RUNNING';
-    logCallback(`🚀 Запуск параллельной рассылки через ${accounts.length} аккаунтов...`);
-    await Promise.all(accounts.map(acc => processAccount(acc, template, config, logCallback, userId, user.token)));
+    logCallback(`🚀 Запуск параллельной рассылки (по 3 потока)...`);
+
+    // ПАРАЛЛЕЛЬНОСТЬ ОГРАНИЧЕНА ПАЧКАМИ ПО 3 АККАУНТА
+    const CONCURRENCY = 3;
+    for (let i = 0; i < accounts.length; i += CONCURRENCY) {
+        const chunk = accounts.slice(i, i + CONCURRENCY);
+        await Promise.all(chunk.map(acc => processAccount(acc, template, config, logCallback, userId, user.token)));
+        if (mailingState[userId] === 'STOPPED') break;
+    }
+
     logCallback("🏁 Все потоки завершены.");
     mailingState[userId] = 'STOPPED';
 }
 
 async function processAccount(account: any, template: any, config: any, logCallback: (msg: string) => void, userId: string, userToken: string) {
-    // Парсим JSON список получателей
     let recipientsList: { email: string; name: string }[] = [];
     try {
         recipientsList = account.recipients ? JSON.parse(account.recipients) : [];
-    } catch {
-        logCallback(`❌ [${account.email}] Ошибка парсинга JSON получателей`);
-        return;
-    }
+    } catch { return; }
 
-    let index = account.currentIndex;
-    const proxyUri = new URL(proxyUrl);
+    const agent = new SocksProxyAgent(proxyUrl);
 
-    while (index < recipientsList.length) {
-        if (mailingState[userId] === 'STOPPED') return;
+    for (let i = account.currentIndex; i < recipientsList.length; i++) {
+        if (mailingState[userId] === 'STOPPED') break;
         while (mailingState[userId] === 'PAUSED') await delay(5000);
 
-        const recipient = recipientsList[index];
-        const targetEmail = recipient.email;
-        const targetName = recipient.name || '';
+        const recipient = recipientsList[i];
 
         try {
-            const generatedLink = await generateLink(template.platform, userId, targetName, userToken);
-
-            const info = await SocksClient.createConnection({
-                proxy: {
-                    host: proxyUri.hostname,
-                    port: parseInt(proxyUri.port),
-                    type: 5,
-                    userId: proxyUri.username,
-                    password: proxyUri.password
-                },
-                command: 'connect',
-                destination: { host: 'smtp.gmail.com', port: 465 }, // <--- ПОРТ 465
-                timeout: 60000
-            });
-
-            // ✅ ТОЛЬКО ЭТО ДОБАВЛЕНО:
-            info.socket.on('close', () => {
-                console.log(`⚠️ Socket закрыт для ${targetEmail}`);
-            });
-
-            info.socket.on('error', (err: any) => {
-                console.log(`⚠️ Socket ошибка для ${targetEmail}:`, err.message);
-            });
+            const generatedLink = await generateLink(template.platform, userId, recipient.name || '', userToken);
 
             const transporter = nodemailer.createTransport({
-                connection: info.socket,
                 host: 'smtp.gmail.com',
-                port: 465, // <--- ПОРТ 465
-                secure: true, // <--- SECURE: TRUE
+                port: 465,
+                secure: true,
                 auth: { user: account.email, pass: account.password },
-                connectionTimeout: 30000,
-                socketTimeout: 30000,
-                greetingTimeout: 20000
-            });
+                httpAgent: agent,
+                connectionTimeout: 45000,
+                socketTimeout: 45000
+            } as any);
 
             let body = template.body
                 .replace(/{{ORDER_ID}}/g, `#${Math.floor(Math.random() * 90000 + 10000)}`)
                 .replace(/{{LINK}}/g, generatedLink)
-                .replace(/{{NAME}}/g, targetName);
+                .replace(/{{NAME}}/g, recipient.name);
 
-            try {
-                await transporter.sendMail({
-                    from: template.senderName ? `${template.senderName} <${account.email}>` : account.email,
-                    to: targetEmail,
-                    subject: template.subject,
-                    [template.type === 'HTML' ? 'html' : 'text']: body
-                });
+            await transporter.sendMail({
+                from: template.senderName ? `${template.senderName} <${account.email}>` : account.email,
+                to: recipient.email,
+                subject: template.subject,
+                [template.type === 'HTML' ? 'html' : 'text']: body
+            });
 
-                logCallback(`✅ [${account.email}] Письмо ушло!`);
-            } finally {
-                // В блоке finally гарантируем закрытие
-                try { await transporter.close(); } catch {}
-                try { info.socket.destroy(); } catch {}
-            }
-
-            index++;
-            await prisma.emailAccount.update({ where: { id: account.id }, data: { currentIndex: index } });
-
-            logCallback(`✅ [${account.email}] → ${targetName} <${targetEmail}> | 🔗 ${generatedLink}`);
+            await prisma.emailAccount.update({ where: { id: account.id }, data: { currentIndex: i + 1 } });
+            logCallback(`✅ [${account.email}] → ${recipient.email}`);
             await delay(Math.floor(Math.random() * (config.delayRange.max - config.delayRange.min + 1) + config.delayRange.min) * 1000);
+
+            await transporter.close();
         } catch (err: any) {
-            logCallback(`❌ [${account.email}] Ошибка ${targetEmail}: ${err.message}`);
+            logCallback(`❌ Ошибка [${account.email}]: ${err.message}`);
             if (err.message.includes('Authentication')) break;
-            index++;
             await delay(5000);
         }
     }
