@@ -55,6 +55,7 @@ model Log {
   toEmail   String   // <-- ОБЯЗАТЕЛЬНОЕ
   status    String
   errorMsg  String?  // Можно пропустить (знак ?)
+  errorType String?
   telegramId String
   sentAt    DateTime @default(now())
 }
