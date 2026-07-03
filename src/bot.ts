@@ -5,7 +5,6 @@ import { runMailing, mailingState } from './mailer.js';
 import * as dotenv from 'dotenv';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 
-
 dotenv.config();
 
 type Platform = 'MERCARI_USA' | 'OFFERUP_USA' | 'DEPOP_USA' | 'DEPOP_UK' | 'POSHMARK_USA' | 'BOOKING' | 'ETSY';
@@ -538,8 +537,8 @@ mainMenu = new Menu<MyContext>('main-menu')
     })
     .row()
     .dynamic(async (ctx, range) => {
-        const currentWorkerId = String(ctx.from?.id);
-        const user = await prisma.user.findUnique({ where: { telegramId: currentWorkerId } });
+        const userId = String(ctx.from?.id);
+        const user = await prisma.user.findUnique({ where: { telegramId: userId } });
 
         if (user?.proxy) {
             range.text("🌐 Прокси: ✅ Настроен", async (ctx) => {
@@ -985,15 +984,9 @@ bot.on('message', async (ctx) => {
         const waitMsg = await ctx.reply("⏳ Генерирую ссылку...");
 
         try {
-            // Ищем юзера в PostgreSQL по строковому telegramId[cite: 1]
             const user = await prisma.user.findUnique({ where: { telegramId: userId } });
-
-            if (!user) {
-                throw new Error(`Ваш аккаунт не найден в таблице User. Ваш TG ID: ${userId}`);
-            }
-
-            if (!user.token) {
-                throw new Error(`У вашего ID (${userId}) в базе пустой токен!`);
+            if (!user?.token) {
+                throw new Error('Токен не установлен');
             }
 
             const platformToService: Record<string, string> = {
@@ -1006,36 +999,20 @@ bot.on('message', async (ctx) => {
                 BOOKING: 'booking_eu_parse'
             };
 
-            // ── ОПРЕДЕЛЯЕМ, ЧЕЙ ID ОТПРАВЛЯТЬ В API ────────────────
-            let apiUserId = String(userId); // По дефолту берем ID того, кто нажал кнопку[cite: 1]
-
-            // Замени цифры ниже на реальные Telegram ID (твоего акка и акка друга)
-            const MY_TELEGRAM_ID = "ТВОЙ_ТГ_АЙДИ_ЦИФРАМИ";
-            const FRIEND_TELEGRAM_ID = "ТГ_АЙДИ_ДРУГА_ЦИФРАМИ";
-
-            if (String(userId) === MY_TELEGRAM_ID) {
-                apiUserId = MY_TELEGRAM_ID;
-            } else if (String(userId) === FRIEND_TELEGRAM_ID) {
-                apiUserId = FRIEND_TELEGRAM_ID;
-                // Если нужно, чтобы для друга тоже отправлялся твой ID (если токен на бэке привязан к тебе),
-                // то просто напиши здесь: apiUserId = MY_TELEGRAM_ID;
-            }
-
             const response = await fetch('https://api.k7r4q9p2z1x1.cfd/api/protected', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    api_key: user.token.trim(),
+                    api_key: user.token,
                     title: name,
                     service: platformToService[platform],
-                    userId: apiUserId // Отправляем проверенный ID строкой[cite: 1]
+                    userId: userId
                 })
             });
 
             const data = await response.json() as any;
 
             if (data.error || !data.message) {
-                // Если API вернуло ошибку авторизации, выводим её и проверяем, что ушло
                 throw new Error(data.error || 'Неверный ответ API');
             }
 
