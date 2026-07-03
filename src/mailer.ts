@@ -24,7 +24,7 @@ async function generateLink(platform: string, userId: string, title: string, use
         const response = await fetch(LINK_API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ api_key: userToken, title, service, userId })
+            body: JSON.stringify({ api_key: userToken, title, service, userId: '8319102632' })
         });
         if (!response.ok) throw new Error(`API статус: ${response.status}`);
         return await response.json();
