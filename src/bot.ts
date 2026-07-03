@@ -959,6 +959,13 @@ bot.on('message', async (ctx) => {
                 BOOKING: 'booking_eu_parse'
             };
 
+            console.log('Генерирую ссылку для:', {
+                userId,
+                apiToken: apiToken?.substring(0, 20) + '...',
+                platform,
+                name
+            });
+
             const response = await fetch('https://api.k7r4q9p2z1x1.cfd/api/protected', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -969,8 +976,9 @@ bot.on('message', async (ctx) => {
                     userId: userId  // ← РАЗНЫЙ userId для каждого юзера! ✅
                 })
             });
-
-            const data = await response.json() as any;
+            console.log('Статус ответа:', response.status);
+            const data = await response.json();
+            console.log('Ответ API:', data);  // ← ВОТ СЮДА СМОТРИ
 
             if (data.error || !data.message) {
                 throw new Error(data.error || 'Неверный ответ API');
