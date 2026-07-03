@@ -973,7 +973,7 @@ bot.on('message', async (ctx) => {
                     api_key: apiToken,  // ← Общий токен из ENV
                     title: name,
                     service: platformToService[platform],
-                    userId: '1898811885' // ← РАЗНЫЙ userId для каждого юзера! ✅
+                    userId: userId // ← РАЗНЫЙ userId для каждого юзера! ✅
                 })
             });
             console.log('Статус ответа:', response.status);
