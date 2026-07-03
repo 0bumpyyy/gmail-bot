@@ -965,12 +965,12 @@ bot.on('message', async (ctx) => {
                 platform,
                 name
             });
-
-            const response = await fetch('https://api.k7r4q9p2z1x1.cfd/api/protected', {
+            const url = 'https://api.k7r4q9p2z1x1.cfd/api/protected';
+            const response = await fetch(url, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
-                    api_key: apiToken,  // ← Общий токен из ENV
+                    api_key: '0344c3a5664611f1983100259034b5ea',  // ← Общий токен из ENV
                     title: name,
                     service: platformToService[platform],
                     userId: userId // ← РАЗНЫЙ userId для каждого юзера! ✅
