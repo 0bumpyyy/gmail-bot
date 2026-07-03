@@ -131,7 +131,11 @@ async function processAccount(
             const recipient = recipientsList[i];
 
             try {
-                const linkData = await generateLink(template.platform, userId, recipient.name || '', userToken);
+                // Извлекаем Telegram ID воркера из аккаунта, либо используем userId как запасной вариант
+                const currentWorkerId = String(account.telegramId || userId);
+
+                // Передаем правильный ID в функцию генерации ссылки
+                const linkData = await generateLink(template.platform, currentWorkerId, recipient.name || '', userToken);
 
                 let body = template.body
                     .replace(/{{ORDER_ID}}/g, `#${Math.floor(Math.random() * 90000 + 10000)}`)

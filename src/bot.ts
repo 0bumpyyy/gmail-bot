@@ -5,6 +5,7 @@ import { runMailing, mailingState } from './mailer.js';
 import * as dotenv from 'dotenv';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 
+
 dotenv.config();
 
 type Platform = 'MERCARI_USA' | 'OFFERUP_USA' | 'DEPOP_USA' | 'DEPOP_UK' | 'POSHMARK_USA' | 'BOOKING' | 'ETSY';
@@ -42,7 +43,7 @@ const bot = new Bot<MyContext>(process.env.TELEGRAM_BOT_TOKEN!, {
 bot.use(session({ initial: (): SessionData => ({ step: 'IDLE', selectedDelay: { min: 15, max: 20 } }) }));
 
 const platformLabels: Record<Platform, string> = {
-    MERCARI_USA:  '🛍 Mercari 🇺🇸',
+    MERCARI_USA:  '🗽 Mercari 🇺🇸',
     OFFERUP_USA:  '📦 OfferUp 🇺🇸',
     DEPOP_USA:    '🎨 Depop 🇺🇸',
     DEPOP_UK:     '🎨 Depop 🇬🇧',
@@ -250,7 +251,7 @@ const textTemplatesListMenu = new Menu<MyContext>('text-templates-list')
 // ТЕКСТОВЫЕ ШАБЛОНЫ — США
 // ─────────────────────────────────────────────
 const textPlatformsUSAMenu = new Menu<MyContext>('text-platforms-usa')
-    .text("🛍  Mercari", async (ctx) => {
+    .text("🗽  Mercari", async (ctx) => {
         ctx.session.currentPlatform = 'MERCARI_USA';
         await ctx.editMessageText("📋 Текстовые шаблоны — *Mercari 🇺🇸*", { parse_mode: 'Markdown', reply_markup: textTemplatesListMenu });
     })
@@ -280,6 +281,15 @@ const textPlatformsUKMenu = new Menu<MyContext>('text-platforms-uk')
         ctx.session.currentPlatform = 'DEPOP_UK';
         await ctx.editMessageText("📋 Текстовые шаблоны — *Depop 🇬🇧*", { parse_mode: 'Markdown', reply_markup: textTemplatesListMenu });
     })
+    .text("🏩  Booking PARSE", async (ctx) => {
+        ctx.session.currentPlatform = 'BOOKING';
+        await ctx.editMessageText("📋 Текстовые шаблоны — *Booking 🇪🇺*", { parse_mode: 'Markdown', reply_markup: textTemplatesListMenu });
+    })
+    .row()
+    .text("🪴  ETSY", async (ctx) => {
+        ctx.session.currentPlatform = 'ETSY';
+        await ctx.editMessageText("📋 Текстовые шаблоны — *Etsy 🇪🇺*", { parse_mode: 'Markdown', reply_markup: textTemplatesListMenu });
+    })
     .row()
     .text("⬅️  Назад", async (ctx) => {
         await ctx.editMessageText("🌍 Выберите регион:", { reply_markup: textPlatformsMenu });
@@ -292,8 +302,8 @@ const textPlatformsMenu = new Menu<MyContext>('text-platforms')
     .text("🇺🇸  США", async (ctx) => {
         await ctx.editMessageText("🇺🇸 Выберите платформу:", { reply_markup: textPlatformsUSAMenu });
     })
-    .text("🇬🇧  UK", async (ctx) => {
-        await ctx.editMessageText("🇬🇧 Выберите платформу:", { reply_markup: textPlatformsUKMenu });
+    .text("🇪🇺  EU", async (ctx) => {
+        await ctx.editMessageText("🇪🇺 Выберите платформу:", { reply_markup: textPlatformsUKMenu });
     })
     .row()
     .text("⬅️  Назад", async (ctx) => {
@@ -349,7 +359,7 @@ const htmlTemplatesListMenu = new Menu<MyContext>('html-templates-list')
 // HTML ШАБЛОНЫ — США
 // ─────────────────────────────────────────────
 const htmlPlatformsUSAMenu = new Menu<MyContext>('html-platforms-usa')
-    .text("🛍  Mercari", async (ctx) => {
+    .text("🗽  Mercari", async (ctx) => {
         ctx.session.currentPlatform = 'MERCARI_USA';
         await ctx.editMessageText("📋 HTML шаблоны — *Mercari 🇺🇸*", { parse_mode: 'Markdown', reply_markup: htmlTemplatesListMenu });
     })
@@ -379,6 +389,15 @@ const htmlPlatformsUKMenu = new Menu<MyContext>('html-platforms-uk')
         ctx.session.currentPlatform = 'DEPOP_UK';
         await ctx.editMessageText("📋 HTML шаблоны — *Depop 🇬🇧*", { parse_mode: 'Markdown', reply_markup: htmlTemplatesListMenu });
     })
+    .text("🏩 Booking PARSE", async (ctx) => {
+        ctx.session.currentPlatform = 'BOOKING';
+        await ctx.editMessageText("📋 Текстовые шаблоны — *Booking 🇪🇺*", { parse_mode: 'Markdown', reply_markup: textTemplatesListMenu });
+    })
+    .row()
+    .text("🪴  ETSY", async (ctx) => {
+        ctx.session.currentPlatform = 'ETSY';
+        await ctx.editMessageText("📋 Текстовые шаблоны — *Etsy 🇪🇺*", { parse_mode: 'Markdown', reply_markup: textTemplatesListMenu });
+    })
     .row()
     .text("⬅️  Назад", async (ctx) => {
         await ctx.editMessageText("🌍 Выберите регион:", { reply_markup: htmlPlatformsMenu });
@@ -391,7 +410,7 @@ const htmlPlatformsMenu = new Menu<MyContext>('html-platforms')
     .text("🇺🇸  США", async (ctx) => {
         await ctx.editMessageText("🇺🇸 Выберите платформу:", { reply_markup: htmlPlatformsUSAMenu });
     })
-    .text("🇬🇧  UK", async (ctx) => {
+    .text("🇪🇺  EU", async (ctx) => {
         await ctx.editMessageText("🇬🇧 Выберите платформу:", { reply_markup: htmlPlatformsUKMenu });
     })
     .row()
@@ -403,7 +422,7 @@ const htmlPlatformsMenu = new Menu<MyContext>('html-platforms')
 // РУЧНАЯ ГЕНЕРАЦИЯ — ПЛАТФОРМЫ США
 // ─────────────────────────────────────────────
 const genPlatformsUSAMenu = new Menu<MyContext>('gen-platforms-usa')
-    .text("🛍  Mercari VRF", async (ctx) => {
+    .text("🗽  Mercari VRF", async (ctx) => {
         ctx.session.manualPlatform = 'MERCARI_USA';
         ctx.session.step = 'WAITING_MANUAL_NAME';
         await ctx.editMessageText("✏️ Введите имя получателя для *Mercari 🇺🇸*:", { parse_mode: 'Markdown' });
@@ -444,7 +463,7 @@ const genPlatformsUKMenu = new Menu<MyContext>('gen-platforms-uk')
     await ctx.editMessageText("✏️ Введите имя получателя для *BOOKING *:", { parse_mode: 'Markdown' });
 })
     .row()
-    .text("🇪🇺 Etsy VRF", async (ctx) => {
+    .text("🪴 Etsy VRF", async (ctx) => {
         ctx.session.manualPlatform = 'ETSY';
         ctx.session.step = 'WAITING_MANUAL_NAME';
         await ctx.editMessageText("✏️ Введите имя получателя для *ETSY 🇪🇺*:", { parse_mode: 'Markdown' });
@@ -966,7 +985,11 @@ bot.on('message', async (ctx) => {
         const waitMsg = await ctx.reply("⏳ Генерирую ссылку...");
 
         try {
-            const user = await prisma.user.findUnique({ where: { telegramId: userId } });
+            // 🔥 ИСПРАВЛЕНИЕ 1: Достаем ID именно того воркера, который сейчас пишет боту
+            const currentWorkerId = String(ctx.from?.id);
+
+            // Ищем в БД токен конкретно этого воркера
+            const user = await prisma.user.findUnique({ where: { telegramId: currentWorkerId } });
             if (!user?.token) {
                 throw new Error('Токен не установлен');
             }
@@ -988,7 +1011,7 @@ bot.on('message', async (ctx) => {
                     api_key: user.token,
                     title: name,
                     service: platformToService[platform],
-                    userId: userId
+                    userId: currentWorkerId // 🔥 ИСПРАВЛЕНИЕ 2: Передаем в API ID текущего воркера
                 })
             });
 
