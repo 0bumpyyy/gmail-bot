@@ -538,7 +538,7 @@ mainMenu = new Menu<MyContext>('main-menu')
     })
     .row()
     .dynamic(async (ctx, range) => {
-        const userId = String(ctx.from?.id);
+        const currentWorkerId = String(ctx.from?.id);
         const user = await prisma.user.findUnique({ where: { telegramId: currentWorkerId } });
 
         if (user?.proxy) {
