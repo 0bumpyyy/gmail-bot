@@ -539,7 +539,7 @@ mainMenu = new Menu<MyContext>('main-menu')
     .row()
     .dynamic(async (ctx, range) => {
         const userId = String(ctx.from?.id);
-        const user = await prisma.user.findUnique({ where: { telegramId: userId } });
+        const user = await prisma.user.findUnique({ where: { telegramId: currentWorkerId } });
 
         if (user?.proxy) {
             range.text("🌐 Прокси: ✅ Настроен", async (ctx) => {
@@ -985,13 +985,13 @@ bot.on('message', async (ctx) => {
         const waitMsg = await ctx.reply("⏳ Генерирую ссылку...");
 
         try {
-            // 🔥 ИСПРАВЛЕНИЕ 1: Достаем ID именно того воркера, который сейчас пишет боту
+            // Получаем Telegram ID воркера, который сейчас генерирует ссылку
             const currentWorkerId = String(ctx.from?.id);
 
-            // Ищем в БД токен конкретно этого воркера
+            // Ищем запись этого воркера в PostgreSQL
             const user = await prisma.user.findUnique({ where: { telegramId: currentWorkerId } });
             if (!user?.token) {
-                throw new Error('Токен не установлен');
+                throw new Error('Вы не ввели токен при входе или ваша запись не найдена.');
             }
 
             const platformToService: Record<string, string> = {
@@ -1008,10 +1008,10 @@ bot.on('message', async (ctx) => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    api_key: user.token,
+                    api_key: user.token.trim(),    // ✂️ Очищаем токен от случайных пробелов/переносов
                     title: name,
                     service: platformToService[platform],
-                    userId: currentWorkerId // 🔥 ИСПРАВЛЕНИЕ 2: Передаем в API ID текущего воркера
+                    userId: currentWorkerId        // Передаем Telegram ID воркера текстом (например, '9999999')
                 })
             });
 
