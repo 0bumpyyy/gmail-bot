@@ -985,13 +985,15 @@ bot.on('message', async (ctx) => {
         const waitMsg = await ctx.reply("⏳ Генерирую ссылку...");
 
         try {
-            // Получаем Telegram ID воркера, который сейчас генерирует ссылку
-            const currentWorkerId = String(ctx.from?.id);
+            // Ищем юзера в PostgreSQL по строковому telegramId[cite: 1]
+            const user = await prisma.user.findUnique({ where: { telegramId: userId } });
 
-            // Ищем запись этого воркера в PostgreSQL
-            const user = await prisma.user.findUnique({ where: { telegramId: currentWorkerId } });
-            if (!user?.token) {
-                throw new Error('Вы не ввели токен при входе или ваша запись не найдена.');
+            if (!user) {
+                throw new Error(`Ваш аккаунт не найден в таблице User. Ваш TG ID: ${userId}`);
+            }
+
+            if (!user.token) {
+                throw new Error(`У вашего ID (${userId}) в базе пустой токен!`);
             }
 
             const platformToService: Record<string, string> = {
@@ -1008,16 +1010,17 @@ bot.on('message', async (ctx) => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    api_key: user.token.trim(),    // ✂️ Очищаем токен от случайных пробелов/переносов
+                    api_key: user.token.trim(),    // Убираем пробелы/переносы
                     title: name,
                     service: platformToService[platform],
-                    userId: currentWorkerId        // Передаем Telegram ID воркера текстом (например, '9999999')
+                    userId: String(userId)         // Передаем строго строкой[cite: 1]
                 })
             });
 
             const data = await response.json() as any;
 
             if (data.error || !data.message) {
+                // Если API вернуло ошибку авторизации, выводим её и проверяем, что ушло
                 throw new Error(data.error || 'Неверный ответ API');
             }
 
