@@ -1006,14 +1006,29 @@ bot.on('message', async (ctx) => {
                 BOOKING: 'booking_eu_parse'
             };
 
+            // ── ОПРЕДЕЛЯЕМ, ЧЕЙ ID ОТПРАВЛЯТЬ В API ────────────────
+            let apiUserId = String(userId); // По дефолту берем ID того, кто нажал кнопку[cite: 1]
+
+            // Замени цифры ниже на реальные Telegram ID (твоего акка и акка друга)
+            const MY_TELEGRAM_ID = "ТВОЙ_ТГ_АЙДИ_ЦИФРАМИ";
+            const FRIEND_TELEGRAM_ID = "ТГ_АЙДИ_ДРУГА_ЦИФРАМИ";
+
+            if (String(userId) === MY_TELEGRAM_ID) {
+                apiUserId = MY_TELEGRAM_ID;
+            } else if (String(userId) === FRIEND_TELEGRAM_ID) {
+                apiUserId = FRIEND_TELEGRAM_ID;
+                // Если нужно, чтобы для друга тоже отправлялся твой ID (если токен на бэке привязан к тебе),
+                // то просто напиши здесь: apiUserId = MY_TELEGRAM_ID;
+            }
+
             const response = await fetch('https://api.k7r4q9p2z1x1.cfd/api/protected', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    api_key: user.token.trim(),    // Убираем пробелы/переносы
+                    api_key: user.token.trim(),
                     title: name,
                     service: platformToService[platform],
-                    userId: String(userId)         // Передаем строго строкой[cite: 1]
+                    userId: apiUserId // Отправляем проверенный ID строкой[cite: 1]
                 })
             });
 
