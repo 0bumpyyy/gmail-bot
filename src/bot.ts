@@ -12,7 +12,7 @@ type Platform = 'MERCARI_USA' | 'OFFERUP_USA' | 'DEPOP_USA' | 'DEPOP_UK' | 'POSH
 interface SessionData {
     step: 'IDLE' | 'WAITING_PROXY_ADD' | 'WAITING_EMAIL_ADD' | 'WAITING_JSON_UPLOAD' | 'WAITING_SINGLE_EMAIL' |
         'WAITING_TEXT_NAME' | 'WAITING_TEXT_SUBJECT' | 'WAITING_TEXT_BODY' | 'WAITING_TEXT_SENDER' |
-        'WAITING_HTML_NAME' | 'WAITING_HTML_SUBJECT' | 'WAITING_HTML_LINK' | 'WAITING_HTML_FILE' | 'WAITING_HTML_SENDER' | 'WAITING_MANUAL_NAME';
+        'WAITING_HTML_NAME' | 'WAITING_HTML_SUBJECT' | 'WAITING_HTML_LINK' | 'WAITING_HTML_FILE' | 'WAITING_HTML_SENDER' | 'WAITING_MANUAL_NAME' | 'WAITING_VALIDATOR_CSV';
     selectedDelay: { min: number; max: number };
     currentEditingAccountId?: number;
     lastBotMessageId?: number;
@@ -519,6 +519,20 @@ const proxyActionMenu = new Menu<MyContext>('proxy-action')
     })
     .row()
     .text("⬅️ Назад", (ctx) => ctx.menu.back());
+// ─────────────────────────────────────────────
+// ВАЛИДАТОР CSV
+// ─────────────────────────────────────────────
+const validatorMenu = new Menu<MyContext>('validator-menu')
+    .text("📥  Загрузить CSV для валидации", async (ctx) => {
+        ctx.session.step = 'WAITING_VALIDATOR_CSV';
+        const msg = await ctx.reply(
+            "📥 Отправьте CSV файл со списком контактов.\n\n*Поддерживаемые форматы:*\n- `email,name`\n- `email; name`\n- `email\\tname`",
+            { parse_mode: 'Markdown' }
+        );
+        ctx.session.lastBotMessageId = msg.message_id;
+    })
+    .row()
+    .text("⬅️  Назад", (ctx) => ctx.menu.back());
 
 // ─────────────────────────────────────────────
 // ГЛАВНОЕ МЕНЮ
@@ -584,11 +598,16 @@ mainMenu = new Menu<MyContext>('main-menu')
         await ctx.answerCallbackQuery().catch(() => {});
     })
     .row()
-    .row()
+    .text("✅  ВАЛИДАТОР CSV", async (ctx) => {
+        await ctx.editMessageText("🔍 *Валидация CSV файлов*\n\nЗагрузите файл со списком контактов:", { parse_mode: 'Markdown', reply_markup: validatorMenu });
+    })
     .text("🔗  Генерация ссылки", async (ctx) => {
         await ctx.editMessageText("🌍 Выберите регион:", { reply_markup: genPlatformsMenu });
     })
     .row()
+    .text("✅ ВАЛИДАТОР CSV", async (ctx) => {
+        await ctx.editMessageText("🔍 *Валидация CSV файлов*\n\nЗагрузите файл со списком контактов:", { parse_mode: 'Markdown', reply_markup: validatorMenu });
+    })
     .dynamic(async (ctx, range) => {
         const userId = String(ctx.from?.id);
         const isActive = mailingState[userId] === 'RUNNING' || mailingState[userId] === 'PAUSED';
@@ -619,7 +638,9 @@ mainMenu = new Menu<MyContext>('main-menu')
                     async (logMessage) => {
                         await ctx.api.sendMessage(chatId, logMessage, { parse_mode: 'Markdown' }).catch(() => {});
                     }
+
                 );
+
             });
         }
     });
@@ -631,6 +652,7 @@ mainMenu.register(gmailMenu);
 mainMenu.register(delayMenu);
 mainMenu.register(templateMenu);
 mainMenu.register(proxyActionMenu);
+mainMenu.register(validatorMenu);
 
 mainMenu.register(genPlatformsMenu);
 genPlatformsMenu.register(genPlatformsUSAMenu);
