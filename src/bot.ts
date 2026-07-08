@@ -1075,13 +1075,12 @@ bot.on('message', async (ctx) => {
         ctx.session.manualPlatform = undefined;
 
     }
-        // --------------------------
-        // ВАЛИДАТОР
+    // --------------------------
+    // ВАЛИДАТОР
     // --------------------------
     else if (step === 'WAITING_VALIDATOR_CSV' && ctx.message.document) {
         try {
-            await ctx.deleteMessage().catch(() => {
-            });
+            await ctx.deleteMessage().catch(() => {});
             await clearLastBotMessage(ctx);
 
             const doc = ctx.message.document;
@@ -1101,66 +1100,34 @@ bot.on('message', async (ctx) => {
 
             console.log('✅ CSV скачан, начинаем парсинг...');
 
-            function parseCSVLine(line: string): string[] {
-                const result: string[] = [];
-                let current: string = '';
-                let insideQuotes: boolean = false;
-
-                for (let i: number = 0; i < line.length; i++) {
-                    const char: string = line[i];
-                    const nextChar: string | undefined = line[i + 1];
-
-                    if (char === '"') {
-                        if (insideQuotes && nextChar === '"') {
-                            current += '"';
-                            i++;
-                        } else {
-                            insideQuotes = !insideQuotes;
-                        }
-                    } else if (char === ',' && !insideQuotes) {
-                        result.push(current.trim().replace(/^"|"$/g, ''));
-                        current = '';
-                    } else {
-                        current += char;
-                    }
-                }
-                result.push(current.trim().replace(/^"|"$/g, ''));
-                return result;
-            }
-
             const lines = textData.split(/[\r\n]+/).filter(line => line.trim());
             console.log(`📊 Всего строк: ${lines.length}`);
 
             const validatedData = [];
             let skippedCount = 0;
-            let outputText = `✅ *Валидированные контакты:*\n\n`;
-
-// Регулярка для поиска email в любом месте строки
-            const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 
             for (const line of lines) {
-                // Регулярка для правильного расщепления CSV строки с учетом кавычек
-                // Она разбивает строку по запятым, но игнорирует запятые внутри кавычек (как в цене "20,00 $")
-                const parts = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
+                // Эта регулярка идеально разбирает CSV, учитывая запятые внутри кавычек
+                const parts: string[] = [];
+                line.replace(/"([^"]*)"|([^,]+)/g, (match, p1, p2) => {
+                    parts.push(p1 !== undefined ? p1 : p2);
+                    return '';
+                });
 
-                // Очищаем элементы от лишних кавычек и пробелов
-                const cleanParts = parts.map(p => p.trim().replace(/^"|"$/g, ''));
+                const cleanParts = parts.map(p => p.trim());
 
-                // Проверяем, что строка полная (в твоем примере 15 элементов, берем с запасом >= 11)
+                // Твоя строка содержит минимум 15 элементов. Нам нужно хотя бы 11.
                 if (cleanParts.length >= 11) {
                     const username = cleanParts[4]; // 5-й элемент (индекс 4) — "alissag65"
-                    const email = cleanParts[10].toLowerCase(); // 11-й элемент (индекс 10) — "alissag65@gmail.com"
+                    const email = cleanParts[10]?.toLowerCase(); // 11-й элемент (индекс 10)
 
                     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-                    if (emailRegex.test(email)) {
+                    if (email && emailRegex.test(email)) {
                         validatedData.push({
                             email: email,
-                            name: username
+                            name: username || 'Unknown'
                         });
-
-                        // ✅ ДОБАВЛЯЕМ В СПИСОК
-                        outputText += `✅ ${email}\n   ${username}\n\n`;
                         console.log(`✅ Добавлен: ${email} (${username})`);
                     } else {
                         skippedCount++;
@@ -1178,37 +1145,41 @@ bot.on('message', async (ctx) => {
                 return;
             }
 
-            // 📊 ОТПРАВЛЯЕМ СПИСОК
-            outputText += `\n━━━━━━━━━━━━━━━━━━━━━━\n`;
-            outputText += `📊 *Итого:*\n`;
-            outputText += `✅ Валидных: *${validatedData.length}*\n`;
-            outputText += `❌ Пропущено: *${skippedCount}*`;
+            // 📊 ФОРМИРУЕМ ОТВЕТ (HTML)
+            let outputText = `<b>✅ Валидированные контакты:</b>\n\n`;
 
-            await ctx.reply(outputText, {parse_mode: 'Markdown'});
+            for (const item of validatedData) {
+                outputText += `✅ ${item.email}\n   ${item.name}\n\n`;
+            }
+
+            outputText += `\n━━━━━━━━━━━━━━━━━━━━━━\n`;
+            outputText += `📊 <b>Итого:</b>\n`;
+            outputText += `✅ Валидных: <b>${validatedData.length}</b>\n`;
+            outputText += `❌ Пропущено: <b>${skippedCount}</b>`;
+
+            await ctx.reply(outputText, { parse_mode: 'HTML' });
 
             // 📥 ОТПРАВЛЯЕМ JSON ФАЙЛОМ
             const jsonContent = JSON.stringify(validatedData, null, 2);
             const buffer = Buffer.from(jsonContent, 'utf-8');
 
-
-            const {Readable} = await import('stream');
-
-            const stream = Readable.from([buffer]);
+            const { InputFile } = await import('grammy');
 
             await ctx.replyWithDocument(
                 new InputFile(buffer, `validated_${Date.now()}.json`),
                 {
                     caption: `📥 JSON файл готов к скачиванию\n${validatedData.length} контактов`,
-                    parse_mode: 'Markdown'
+                    parse_mode: 'HTML'
                 }
             );
 
             console.log('📤 JSON файл отправлен');
             ctx.session.step = 'IDLE';
+
         } catch (err: unknown) {
             const errorMessage = err instanceof Error ? err.message : String(err);
             console.error('❌ Ошибка:', errorMessage);
-            await ctx.reply(`❌ Ошибка: ${errorMessage}`, {parse_mode: 'Markdown'});
+            await ctx.reply(`❌ Ошибка: ${errorMessage}`, { parse_mode: 'HTML' });
             ctx.session.step = 'IDLE';
         }
     }
