@@ -1,4 +1,4 @@
-import { Bot, Context, session, SessionFlavor } from 'grammy';
+import { Bot, Context, session, SessionFlavor, InputFile } from 'grammy';
 import { Menu } from '@grammyjs/menu';
 import { prisma } from './db.js';
 import { runMailing, mailingState } from './mailer.js';
@@ -696,42 +696,48 @@ bot.on('message', async (ctx) => {
 
     // ДОБАВЛЕНИЕ ПРОКСИ
     if (step === 'WAITING_PROXY_ADD' && ctx.message.text) {
-        try { await ctx.deleteMessage(); } catch(e){}
+        try {
+            await ctx.deleteMessage();
+        } catch (e) {
+        }
         await clearLastBotMessage(ctx);
 
         const proxyInput = ctx.message.text.trim();
         const userId = String(ctx.from.id);
 
         if (!proxyInput.startsWith('socks5://')) {
-            const msg = await ctx.reply("❌ Неверный формат. Используйте `socks5://user:pass@ip:port`", { parse_mode: 'Markdown' });
+            const msg = await ctx.reply("❌ Неверный формат. Используйте `socks5://user:pass@ip:port`", {parse_mode: 'Markdown'});
             ctx.session.lastBotMessageId = msg.message_id;
             return;
         }
 
         await prisma.user.update({
-            where: { telegramId: userId },
-            data: { proxy: proxyInput }
+            where: {telegramId: userId},
+            data: {proxy: proxyInput}
         });
 
         ctx.session.step = 'IDLE';
-        await ctx.reply("✅ Прокси успешно сохранен!", { reply_markup: mainMenu });
+        await ctx.reply("✅ Прокси успешно сохранен!", {reply_markup: mainMenu});
     }
 
     // ДОБАВЛЕНИЕ АККАУНТА
     else if (step === 'WAITING_EMAIL_ADD' && ctx.message.text) {
-        try { await ctx.deleteMessage(); } catch(e){}
+        try {
+            await ctx.deleteMessage();
+        } catch (e) {
+        }
         await clearLastBotMessage(ctx);
         const parts = ctx.message.text.split(' ');
         if (parts.length !== 2) {
-            const msg = await ctx.reply("❌ Неверный формат.\nНужно: `email@gmail.com пароль`", { parse_mode: 'Markdown' });
+            const msg = await ctx.reply("❌ Неверный формат.\nНужно: `email@gmail.com пароль`", {parse_mode: 'Markdown'});
             ctx.session.lastBotMessageId = msg.message_id;
             return;
         }
         const [email, password] = parts;
         try {
-            await prisma.emailAccount.create({ data: { email, password, telegramId: userId } });
+            await prisma.emailAccount.create({data: {email, password, telegramId: userId}});
             ctx.session.step = 'IDLE';
-            await ctx.reply("✅ Аккаунт добавлен.", { reply_markup: mainMenu });
+            await ctx.reply("✅ Аккаунт добавлен.", {reply_markup: mainMenu});
         } catch {
             const msg = await ctx.reply("❌ Ошибка — возможно, аккаунт уже добавлен.");
             ctx.session.lastBotMessageId = msg.message_id;
@@ -740,49 +746,55 @@ bot.on('message', async (ctx) => {
 
     // ── ТЕКСТОВЫЙ ШАБЛОН ──────────────────────
     else if (step === 'WAITING_TEXT_NAME' && ctx.message.text) {
-        try { await ctx.deleteMessage(); } catch(e){}
+        try {
+            await ctx.deleteMessage();
+        } catch (e) {
+        }
         await clearLastBotMessage(ctx);
         ctx.session.currentTemplateName = ctx.message.text.trim();
         ctx.session.step = 'WAITING_TEXT_SUBJECT';
         const msg = await ctx.reply(
             `*Шаг 2 из 4* — Введите тему письма (Subject):\n\n_Название: "${ctx.session.currentTemplateName}"_`,
-            { parse_mode: 'Markdown' }
+            {parse_mode: 'Markdown'}
         );
         ctx.session.lastBotMessageId = msg.message_id;
-    }
-
-    else if (step === 'WAITING_TEXT_SUBJECT' && ctx.message.text) {
-        try { await ctx.deleteMessage(); } catch(e){}
+    } else if (step === 'WAITING_TEXT_SUBJECT' && ctx.message.text) {
+        try {
+            await ctx.deleteMessage();
+        } catch (e) {
+        }
         await clearLastBotMessage(ctx);
         ctx.session.textSubject = ctx.message.text.trim();
         ctx.session.step = 'WAITING_TEXT_BODY';
         const msg = await ctx.reply(
             `*Шаг 3 из 4* — Введите текст письма:\n\nДоступные переменные:\n\`{{NAME}}\` — имя получателя\n\`{{LINK}}\` — сгенерированная ссылка\n\`{{ORDER_ID}}\` — случайный номер заказа`,
-            { parse_mode: 'Markdown' }
+            {parse_mode: 'Markdown'}
         );
         ctx.session.lastBotMessageId = msg.message_id;
-    }
-
-    else if (step === 'WAITING_TEXT_BODY' && ctx.message.text) {
-        try { await ctx.deleteMessage(); } catch(e){}
+    } else if (step === 'WAITING_TEXT_BODY' && ctx.message.text) {
+        try {
+            await ctx.deleteMessage();
+        } catch (e) {
+        }
         await clearLastBotMessage(ctx);
         ctx.session.textBody = ctx.message.text.trim();
         ctx.session.step = 'WAITING_TEXT_SENDER';
         const msg = await ctx.reply(
             `*Шаг 4 из 4* — Введите имя отправителя:\n\n_Например: Support, John от Depop_`,
-            { parse_mode: 'Markdown' }
+            {parse_mode: 'Markdown'}
         );
         ctx.session.lastBotMessageId = msg.message_id;
-    }
-
-    else if (step === 'WAITING_TEXT_SENDER' && ctx.message.text) {
-        try { await ctx.deleteMessage(); } catch(e){}
+    } else if (step === 'WAITING_TEXT_SENDER' && ctx.message.text) {
+        try {
+            await ctx.deleteMessage();
+        } catch (e) {
+        }
         await clearLastBotMessage(ctx);
         const senderName = ctx.message.text.trim();
         const platform = ctx.session.currentPlatform || 'DEPOP_USA';
         const templateName = ctx.session.currentTemplateName || 'Без названия';
 
-        await prisma.template.updateMany({ where: { telegramId: userId }, data: { isActive: false } });
+        await prisma.template.updateMany({where: {telegramId: userId}, data: {isActive: false}});
         await prisma.template.create({
             data: {
                 telegramId: userId, platform, name: templateName, type: 'TEXT',
@@ -797,52 +809,61 @@ bot.on('message', async (ctx) => {
         ctx.session.textBody = undefined;
 
         const label = platformLabels[platform] || platform;
-        await ctx.reply(`✅ Шаблон *"${templateName}"* создан для ${label} и активирован.`, { parse_mode: 'Markdown', reply_markup: mainMenu });
+        await ctx.reply(`✅ Шаблон *"${templateName}"* создан для ${label} и активирован.`, {
+            parse_mode: 'Markdown',
+            reply_markup: mainMenu
+        });
     }
 
     // ── HTML ШАБЛОН ───────────────────────────
     else if (step === 'WAITING_HTML_NAME' && ctx.message.text) {
-        try { await ctx.deleteMessage(); } catch(e){}
+        try {
+            await ctx.deleteMessage();
+        } catch (e) {
+        }
         await clearLastBotMessage(ctx);
         ctx.session.currentTemplateName = ctx.message.text.trim();
         ctx.session.step = 'WAITING_HTML_SUBJECT';
         const msg = await ctx.reply(
             `*Шаг 2 из 5* — Введите тему письма (Subject):\n\n_Название: "${ctx.session.currentTemplateName}"_`,
-            { parse_mode: 'Markdown' }
+            {parse_mode: 'Markdown'}
         );
         ctx.session.lastBotMessageId = msg.message_id;
-    }
-
-    else if (step === 'WAITING_HTML_SUBJECT' && ctx.message.text) {
-        try { await ctx.deleteMessage(); } catch(e){}
+    } else if (step === 'WAITING_HTML_SUBJECT' && ctx.message.text) {
+        try {
+            await ctx.deleteMessage();
+        } catch (e) {
+        }
         await clearLastBotMessage(ctx);
         ctx.session.htmlSubject = ctx.message.text.trim();
         ctx.session.step = 'WAITING_HTML_LINK';
         const msg = await ctx.reply(
             `*Шаг 3 из 5* — Введите резервную ссылку (или точку если не нужна):\n\n_Тема: "${ctx.session.htmlSubject}"_`,
-            { parse_mode: 'Markdown' }
+            {parse_mode: 'Markdown'}
         );
         ctx.session.lastBotMessageId = msg.message_id;
-    }
-
-    else if (step === 'WAITING_HTML_LINK' && ctx.message.text) {
-        try { await ctx.deleteMessage(); } catch(e){}
+    } else if (step === 'WAITING_HTML_LINK' && ctx.message.text) {
+        try {
+            await ctx.deleteMessage();
+        } catch (e) {
+        }
         await clearLastBotMessage(ctx);
         ctx.session.htmlLink = ctx.message.text.trim();
         ctx.session.step = 'WAITING_HTML_FILE';
         const msg = await ctx.reply(
             `*Шаг 4 из 5* — Отправьте файл \`.html\`\n\nВ коде письма используйте:\n\`{{NAME}}\` \`{{LINK}}\` \`{{ORDER_ID}}\``,
-            { parse_mode: 'Markdown' }
+            {parse_mode: 'Markdown'}
         );
         ctx.session.lastBotMessageId = msg.message_id;
-    }
-
-    else if (step === 'WAITING_HTML_FILE' && ctx.message.document) {
-        try { await ctx.deleteMessage(); } catch(e){}
+    } else if (step === 'WAITING_HTML_FILE' && ctx.message.document) {
+        try {
+            await ctx.deleteMessage();
+        } catch (e) {
+        }
         await clearLastBotMessage(ctx);
         const doc = ctx.message.document;
         if (!doc.file_name?.endsWith('.html')) {
-            const msg = await ctx.reply("❌ Нужен файл `.html`", { parse_mode: 'Markdown' });
+            const msg = await ctx.reply("❌ Нужен файл `.html`", {parse_mode: 'Markdown'});
             ctx.session.lastBotMessageId = msg.message_id;
             return;
         }
@@ -851,18 +872,19 @@ bot.on('message', async (ctx) => {
         const response = await fetch(url);
         ctx.session.textBody = await response.text();
         ctx.session.step = 'WAITING_HTML_SENDER';
-        const msg = await ctx.reply("*Шаг 5 из 5* — Введите имя отправителя:", { parse_mode: 'Markdown' });
+        const msg = await ctx.reply("*Шаг 5 из 5* — Введите имя отправителя:", {parse_mode: 'Markdown'});
         ctx.session.lastBotMessageId = msg.message_id;
-    }
-
-    else if (step === 'WAITING_HTML_SENDER' && ctx.message.text) {
-        try { await ctx.deleteMessage(); } catch(e){}
+    } else if (step === 'WAITING_HTML_SENDER' && ctx.message.text) {
+        try {
+            await ctx.deleteMessage();
+        } catch (e) {
+        }
         await clearLastBotMessage(ctx);
         const senderName = ctx.message.text.trim();
         const platform = ctx.session.currentPlatform || 'DEPOP_USA';
         const templateName = ctx.session.currentTemplateName || 'Без названия';
 
-        await prisma.template.updateMany({ where: { telegramId: userId }, data: { isActive: false } });
+        await prisma.template.updateMany({where: {telegramId: userId}, data: {isActive: false}});
         await prisma.template.create({
             data: {
                 telegramId: userId, platform, name: templateName, type: 'HTML',
@@ -879,12 +901,18 @@ bot.on('message', async (ctx) => {
         ctx.session.textBody = undefined;
 
         const label = platformLabels[platform] || platform;
-        await ctx.reply(`✅ HTML шаблон *"${templateName}"* создан для ${label} и активирован.`, { parse_mode: 'Markdown', reply_markup: mainMenu });
+        await ctx.reply(`✅ HTML шаблон *"${templateName}"* создан для ${label} и активирован.`, {
+            parse_mode: 'Markdown',
+            reply_markup: mainMenu
+        });
     }
 
     // ── ОДИН EMAIL ────────────────────────────
     else if (step === 'WAITING_SINGLE_EMAIL' && ctx.message.text) {
-        try { await ctx.deleteMessage(); } catch(e){}
+        try {
+            await ctx.deleteMessage();
+        } catch (e) {
+        }
         await clearLastBotMessage(ctx);
         const targetEmail = ctx.message.text.trim();
         if (!targetEmail.includes('@')) {
@@ -893,21 +921,31 @@ bot.on('message', async (ctx) => {
             return;
         }
         await prisma.emailAccount.update({
-            where: { id: ctx.session.currentEditingAccountId },
-            data: { csvName: "Вручную (1 адрес)", recipients: JSON.stringify([{ email: targetEmail, name: '' }]), currentIndex: 0 }
+            where: {id: ctx.session.currentEditingAccountId},
+            data: {
+                csvName: "Вручную (1 адрес)",
+                recipients: JSON.stringify([{email: targetEmail, name: ''}]),
+                currentIndex: 0
+            }
         });
         ctx.session.step = 'IDLE';
-        await ctx.reply(`✅ Получатель \`${targetEmail}\` установлен.`, { parse_mode: 'Markdown', reply_markup: mainMenu });
+        await ctx.reply(`✅ Получатель \`${targetEmail}\` установлен.`, {
+            parse_mode: 'Markdown',
+            reply_markup: mainMenu
+        });
     }
 
     // ── JSON ЗАГРУЗКА ─────────────────────────
     else if (step === 'WAITING_JSON_UPLOAD' && ctx.message.document) {
-        try { await ctx.deleteMessage(); } catch(e){}
+        try {
+            await ctx.deleteMessage();
+        } catch (e) {
+        }
         await clearLastBotMessage(ctx);
         const doc = ctx.message.document;
 
         if (!doc.file_name?.endsWith('.json')) {
-            const msg = await ctx.reply("❌ Нужен файл `.json`", { parse_mode: 'Markdown' });
+            const msg = await ctx.reply("❌ Нужен файл `.json`", {parse_mode: 'Markdown'});
             ctx.session.lastBotMessageId = msg.message_id;
             return;
         }
@@ -924,7 +962,7 @@ bot.on('message', async (ctx) => {
         } catch {
             const msg = await ctx.reply(
                 '❌ Неверный формат.\nНужно: `[{"email":"...","name":"..."}, ...]`',
-                { parse_mode: 'Markdown' }
+                {parse_mode: 'Markdown'}
             );
             ctx.session.lastBotMessageId = msg.message_id;
             return;
@@ -938,13 +976,13 @@ bot.on('message', async (ctx) => {
         }
 
         await prisma.emailAccount.update({
-            where: { id: ctx.session.currentEditingAccountId },
-            data: { csvName: doc.file_name, recipients: JSON.stringify(valid), currentIndex: 0 }
+            where: {id: ctx.session.currentEditingAccountId},
+            data: {csvName: doc.file_name, recipients: JSON.stringify(valid), currentIndex: 0}
         });
         ctx.session.step = 'IDLE';
         await ctx.reply(
             `✅ Загружено *${valid.length}* получателей из \`${doc.file_name}\``,
-            { parse_mode: 'Markdown', reply_markup: mainMenu }
+            {parse_mode: 'Markdown', reply_markup: mainMenu}
         );
     }
 
@@ -1037,8 +1075,8 @@ bot.on('message', async (ctx) => {
         ctx.session.manualPlatform = undefined;
 
     }
-    // --------------------------
-    // ВАЛИДАТОР
+        // --------------------------
+        // ВАЛИДАТОР
     // --------------------------
     else if (step === 'WAITING_VALIDATOR_CSV' && ctx.message.document) {
         try {
@@ -1097,26 +1135,30 @@ bot.on('message', async (ctx) => {
             let skippedCount = 0;
             let outputText = `✅ *Валидированные контакты:*\n\n`;
 
+// Регулярка для поиска email в любом месте строки
+            const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+
             for (const line of lines) {
-                const parts = parseCSVLine(line);
+                // 1. Пытаемся найти email в сырой строке
+                const emailMatch = line.match(emailRegex);
 
-                if (parts.length >= 8) {
-                    const name = parts[3] || 'Unknown';
-                    const email = parts[7] || '';
+                if (emailMatch) {
+                    const email = emailMatch[0].toLowerCase();
 
-                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                    if (emailRegex.test(email)) {
-                        validatedData.push({
-                            email: email.toLowerCase(),
-                            name: name
-                        });
+                    // 2. Вытаскиваем имя: разбиваем строку по запятой или точке с запятой
+                    const parts = line.split(/[,;]/).map(p => p.trim().replace(/^"|"$/g, ''));
 
-                        // ✅ ДОБАВЛЯЕМ В СПИСОК
-                        outputText += `✅ ${email}\n   ${name}\n\n`;
-                        console.log(`✅ Добавлен: ${email} (${name})`);
-                    } else {
-                        skippedCount++;
-                    }
+                    // Ищем элемент, который НЕ является имейлом и не пустой — это и будет имя
+                    let name = parts.find(p => p && !p.includes('@')) || 'Unknown';
+
+                    validatedData.push({
+                        email: email,
+                        name: name
+                    });
+
+                    // ✅ ДОБАВЛЯЕМ В СПИСОК
+                    outputText += `✅ ${email}\n   ${name}\n\n`;
+                    console.log(`✅ Добавлен: ${email} (${name})`);
                 } else {
                     skippedCount++;
                 }
@@ -1130,28 +1172,41 @@ bot.on('message', async (ctx) => {
                 return;
             }
 
-            // 📊 ОТПРАВЛЯЕМ СПИСОК + СТАТИСТИКА
+            // 📊 ОТПРАВЛЯЕМ СПИСОК
             outputText += `\n━━━━━━━━━━━━━━━━━━━━━━\n`;
             outputText += `📊 *Итого:*\n`;
             outputText += `✅ Валидных: *${validatedData.length}*\n`;
-            outputText += `❌ Пропущено: *${skippedCount}*\n\n`;
-
-            // JSON В КОНЦЕ
-            const jsonContent = JSON.stringify(validatedData, null, 2);
-            outputText += `*JSON результат:*\n\`\`\`json\n${jsonContent}\n\`\`\``;
+            outputText += `❌ Пропущено: *${skippedCount}*`;
 
             await ctx.reply(outputText, {parse_mode: 'Markdown'});
 
-            console.log('📤 Список отправлен');
+            // 📥 ОТПРАВЛЯЕМ JSON ФАЙЛОМ
+            const jsonContent = JSON.stringify(validatedData, null, 2);
+            const buffer = Buffer.from(jsonContent, 'utf-8');
+
+
+            const {Readable} = await import('stream');
+
+            const stream = Readable.from([buffer]);
+
+            await ctx.replyWithDocument(
+                new InputFile(buffer, `validated_${Date.now()}.json`),
+                {
+                    caption: `📥 JSON файл готов к скачиванию\n${validatedData.length} контактов`,
+                    parse_mode: 'Markdown'
+                }
+            );
+
+            console.log('📤 JSON файл отправлен');
             ctx.session.step = 'IDLE';
-        }  catch (err: unknown) {
+        } catch (err: unknown) {
             const errorMessage = err instanceof Error ? err.message : String(err);
             console.error('❌ Ошибка:', errorMessage);
-            await ctx.reply(`❌ Ошибка: ${errorMessage}`, { parse_mode: 'Markdown' });
+            await ctx.reply(`❌ Ошибка: ${errorMessage}`, {parse_mode: 'Markdown'});
             ctx.session.step = 'IDLE';
         }
     }
-    });
+});
 
 
 
