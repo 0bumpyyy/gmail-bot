@@ -1137,30 +1137,30 @@ bot.on('message', async (ctx) => {
             console.log(`✅ Валидных: ${validatedData.length}, Пропущено: ${skippedCount}`);
 
             // 6️⃣ СОЗДАЕМ JSON
+            // Сохраняем JSON
             const jsonContent = JSON.stringify(validatedData, null, 2);
-            console.log('JSON content:', jsonContent);
 
-            // 7️⃣ СОХРАНЯЕМ В ФАЙЛ
-            const fs = require('fs');
+            // Импортируем fs для работы с файлами
+            const fsModule = await import('fs');
+            const fs = fsModule.default || fsModule;
+
             const fileName = `validated_${Date.now()}.json`;
             const filePath = `/tmp/${fileName}`;
-            fs.writeFileSync(filePath, jsonContent);
 
+            fs.writeFileSync(filePath, jsonContent);
             console.log(`📄 JSON сохранен в: ${filePath}`);
 
-            // 8️⃣ ОТПРАВЛЯЕМ JSON ПОЛЬЗОВАТЕЛЮ
+            // Отправляем файл
             const { InputFile } = await import('grammy');
             await ctx.replyWithDocument(
                 new InputFile(filePath),
                 {
-                    caption: `✅ *Валидация завершена!*\n\n📊 *Результаты:*\n✅ Валидных контактов: *${validatedData.length}*\n❌ Пропущено: *${skippedCount}*`,
+                    caption: `✅ *Валидация завершена!*\n\n📊 *Результаты:*\n✅ Валидных: *${validatedData.length}*\n❌ Пропущено: *${skippedCount}*`,
                     parse_mode: 'Markdown'
                 }
             );
 
-            console.log('📤 JSON файл отправлен');
-
-            // 9️⃣ УДАЛЯЕМ ВРЕМЕННЫЙ ФАЙЛ
+            // Удаляем временный файл
             fs.unlinkSync(filePath);
 
             ctx.session.step = 'IDLE';
