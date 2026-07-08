@@ -1139,26 +1139,32 @@ bot.on('message', async (ctx) => {
             const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 
             for (const line of lines) {
-                // 1. Пытаемся найти email в сырой строке
-                const emailMatch = line.match(emailRegex);
+                // Регулярка для правильного расщепления CSV строки с учетом кавычек
+                // Она разбивает строку по запятым, но игнорирует запятые внутри кавычек (как в цене "20,00 $")
+                const parts = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
 
-                if (emailMatch) {
-                    const email = emailMatch[0].toLowerCase();
+                // Очищаем элементы от лишних кавычек и пробелов
+                const cleanParts = parts.map(p => p.trim().replace(/^"|"$/g, ''));
 
-                    // 2. Вытаскиваем имя: разбиваем строку по запятой или точке с запятой
-                    const parts = line.split(/[,;]/).map(p => p.trim().replace(/^"|"$/g, ''));
+                // Проверяем, что строка полная (в твоем примере 15 элементов, берем с запасом >= 11)
+                if (cleanParts.length >= 11) {
+                    const username = cleanParts[4]; // 5-й элемент (индекс 4) — "alissag65"
+                    const email = cleanParts[10].toLowerCase(); // 11-й элемент (индекс 10) — "alissag65@gmail.com"
 
-                    // Ищем элемент, который НЕ является имейлом и не пустой — это и будет имя
-                    let name = parts.find(p => p && !p.includes('@')) || 'Unknown';
+                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-                    validatedData.push({
-                        email: email,
-                        name: name
-                    });
+                    if (emailRegex.test(email)) {
+                        validatedData.push({
+                            email: email,
+                            name: username
+                        });
 
-                    // ✅ ДОБАВЛЯЕМ В СПИСОК
-                    outputText += `✅ ${email}\n   ${name}\n\n`;
-                    console.log(`✅ Добавлен: ${email} (${name})`);
+                        // ✅ ДОБАВЛЯЕМ В СПИСОК
+                        outputText += `✅ ${email}\n   ${username}\n\n`;
+                        console.log(`✅ Добавлен: ${email} (${username})`);
+                    } else {
+                        skippedCount++;
+                    }
                 } else {
                     skippedCount++;
                 }
