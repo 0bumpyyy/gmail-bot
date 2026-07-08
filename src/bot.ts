@@ -1042,31 +1042,27 @@ bot.on('message', async (ctx) => {
     // --------------------------
     else if (step === 'WAITING_VALIDATOR_CSV' && ctx.message.document) {
         try {
-            await ctx.deleteMessage();
-        } catch (e) { }
+            await ctx.deleteMessage().catch(() => {
+            });
+            await clearLastBotMessage(ctx);
 
-        await clearLastBotMessage(ctx);
+            const doc = ctx.message.document;
 
-        const doc = ctx.message.document;  // ← БЕЗ : any
+            if (!doc.file_name?.endsWith('.csv')) {
+                const msg = await ctx.reply("❌ Нужен файл .csv");
+                ctx.session.lastBotMessageId = msg.message_id;
+                return;
+            }
 
-        // Проверяем расширение файла
-        if (!doc.file_name?.endsWith('.csv')) {
-            const msg = await ctx.reply("❌ Нужен файл с расширением `.csv`.", { parse_mode: 'Markdown' });
-            ctx.session.lastBotMessageId = msg.message_id;
-            return;
-        }
+            console.log('📥 Начало валидации CSV...');
 
-        try {
-            // 1️⃣ СКАЧИВАЕМ CSV ФАЙЛ
             const file = await ctx.api.getFile(doc.file_id);
             const url = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
             const response = await fetch(url);
             const textData = await response.text();
 
-            console.log('📥 CSV скачан');
+            console.log('✅ CSV скачан, начинаем парсинг...');
 
-            // 2️⃣ ФУНКЦИЯ ДЛЯ ПАРСИНГА CSV С КАВЫЧКАМИ
-            // ✅ ПРАВИЛЬНО:
             function parseCSVLine(line: string): string[] {
                 const result: string[] = [];
                 let current: string = '';
@@ -1094,29 +1090,30 @@ bot.on('message', async (ctx) => {
                 return result;
             }
 
-            // 3️⃣ РАЗБИВАЕМ CSV НА СТРОКИ
             const lines = textData.split(/[\r\n]+/).filter(line => line.trim());
-            console.log(`📊 Всего строк в CSV: ${lines.length}`);
+            console.log(`📊 Всего строк: ${lines.length}`);
 
             const validatedData = [];
             let skippedCount = 0;
+            let outputText = `✅ *Валидированные контакты:*\n\n`;
 
-            // 4️⃣ ЦИКЛ: ПАРСИМ КАЖДУЮ СТРОКУ
             for (const line of lines) {
                 const parts = parseCSVLine(line);
 
-                // Извлекаем: имя (поле 4 = index 3) и email (поле 8 = index 7)
                 if (parts.length >= 8) {
                     const name = parts[3] || 'Unknown';
                     const email = parts[7] || '';
 
-                    // Валидируем email
                     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
                     if (emailRegex.test(email)) {
                         validatedData.push({
                             email: email.toLowerCase(),
                             name: name
                         });
+
+                        // ✅ ДОБАВЛЯЕМ В СПИСОК
+                        outputText += `✅ ${email}\n   ${name}\n\n`;
+                        console.log(`✅ Добавлен: ${email} (${name})`);
                     } else {
                         skippedCount++;
                     }
@@ -1124,55 +1121,37 @@ bot.on('message', async (ctx) => {
                     skippedCount++;
                 }
             }
-            // ← КОНЕЦ ЦИКЛА
 
-            // 5️⃣ ПРОВЕРКА ПОСЛЕ ЦИКЛА!
+            console.log(`✅ Парсинг завершен: ${validatedData.length} валидных, ${skippedCount} пропущено`);
+
             if (validatedData.length === 0) {
-                const msg = await ctx.reply("❌ Не найдено валидных email адресов. Проверьте CSV.", { parse_mode: 'Markdown' });
-                ctx.session.lastBotMessageId = msg.message_id;
+                await ctx.reply("❌ Не найдено валидных email адресов. Проверьте CSV.");
                 ctx.session.step = 'IDLE';
                 return;
             }
 
-            console.log(`✅ Валидных: ${validatedData.length}, Пропущено: ${skippedCount}`);
+            // 📊 ОТПРАВЛЯЕМ СПИСОК + СТАТИСТИКА
+            outputText += `\n━━━━━━━━━━━━━━━━━━━━━━\n`;
+            outputText += `📊 *Итого:*\n`;
+            outputText += `✅ Валидных: *${validatedData.length}*\n`;
+            outputText += `❌ Пропущено: *${skippedCount}*\n\n`;
 
-            // 6️⃣ СОЗДАЕМ JSON
-            // Сохраняем JSON
+            // JSON В КОНЦЕ
             const jsonContent = JSON.stringify(validatedData, null, 2);
+            outputText += `*JSON результат:*\n\`\`\`json\n${jsonContent}\n\`\`\``;
 
-            // Импортируем fs для работы с файлами
-            const fsModule = await import('fs');
-            const fs = fsModule.default || fsModule;
+            await ctx.reply(outputText, {parse_mode: 'Markdown'});
 
-            const fileName = `validated_${Date.now()}.json`;
-            const filePath = `/tmp/${fileName}`;
-
-            fs.writeFileSync(filePath, jsonContent);
-            console.log(`📄 JSON сохранен в: ${filePath}`);
-
-            // Отправляем файл
-            const { InputFile } = await import('grammy');
-            await ctx.replyWithDocument(
-                new InputFile(filePath),
-                {
-                    caption: `✅ *Валидация завершена!*\n\n📊 *Результаты:*\n✅ Валидных: *${validatedData.length}*\n❌ Пропущено: *${skippedCount}*`,
-                    parse_mode: 'Markdown'
-                }
-            );
-
-            // Удаляем временный файл
-            fs.unlinkSync(filePath);
-
+            console.log('📤 Список отправлен');
             ctx.session.step = 'IDLE';
-        }
-        catch (err: unknown) {
-            console.error('❌ Ошибка валидации:', err);
+        }  catch (err: unknown) {
             const errorMessage = err instanceof Error ? err.message : String(err);
+            console.error('❌ Ошибка:', errorMessage);
             await ctx.reply(`❌ Ошибка: ${errorMessage}`, { parse_mode: 'Markdown' });
             ctx.session.step = 'IDLE';
         }
     }
-});
+    });
 
 
 
